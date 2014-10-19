@@ -26,7 +26,8 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-
+#include "opt-A1.h"
+#if OPT_A1
 #ifndef _SYNCH_H_
 #define _SYNCH_H_
 
@@ -34,7 +35,7 @@
  * Header file for synchronization primitives.
  */
 
-
+#include <thread.h>
 #include <spinlock.h>
 
 /*
@@ -74,8 +75,10 @@ void V(struct semaphore *);
  */
 struct lock {
         char *lk_name;
-        // add what you need here
-        // (don't forget to mark things volatile as needed)
+	struct wchan *lk_wchan;
+	struct spinlock lk_lock; 
+        volatile int held;
+	struct thread* holder;
 };
 
 struct lock *lock_create(const char *name);
@@ -137,5 +140,5 @@ void cv_wait(struct cv *cv, struct lock *lock);
 void cv_signal(struct cv *cv, struct lock *lock);
 void cv_broadcast(struct cv *cv, struct lock *lock);
 
-
+#endif /*OPT_A1 */
 #endif /* _SYNCH_H_ */

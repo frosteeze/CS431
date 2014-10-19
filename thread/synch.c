@@ -31,14 +31,16 @@
  * Synchronization primitives.
  * The specifications of the functions are in synch.h.
  */
-
+#include "opt-A1.h"
 #include <types.h>
 #include <lib.h>
 #include <spinlock.h>
+#include <spl.h>
 #include <wchan.h>
 #include <thread.h>
 #include <current.h>
 #include <synch.h>
+
 
 ////////////////////////////////////////////////////////////
 //
@@ -146,7 +148,7 @@ V(struct semaphore *sem)
 ////////////////////////////////////////////////////////////
 //
 // Lock.
-
+#if OPT_A1
 struct lock *
 lock_create(const char *name)
 {
@@ -164,7 +166,20 @@ lock_create(const char *name)
         }
         
         // add stuff here as needed
-        
+	lock->lk_wchan = wchan_create(lock->lk_name);
+	
+
+	if(lock->lk_wchan ==NULL){
+		kfree(lock->lk_name);
+		kfree(lock);
+	}
+
+	spinlock_init(&lock->lk_lock);	
+
+		
+		lock->held = 0;
+		lock->holder = NULL;
+		
         return lock;
 }
 
@@ -172,39 +187,71 @@ void
 lock_destroy(struct lock *lock)
 {
         KASSERT(lock != NULL);
-
-        // add stuff here as needed
-        
+	KASSERT(curthread->t_in_interrupt == false);
+	spinlock_cleanup(&lock->lk_lock);
+	wchan_destroy(lock->lk_wchan);
         kfree(lock->lk_name);
+	kfree(lock->holder);
         kfree(lock);
 }
 
 void
 lock_acquire(struct lock *lock)
 {
-        // Write this
+	int spl;
+	KASSERT(lock != NULL);
+	//KASSERT(!lock->held);
+	spl = splhigh();
+	KASSERT(curthread->t_in_interrupt == false);
+	spinlock_acquire(&lock->lk_lock);
+	if(lock_do_i_hold(lock))
+	{
+		spinlock_release(&lock->lk_lock);
+		return;
+}
+else
+{
 
-        (void)lock;  // suppress warning until code gets written
+
+	while(lock->holder != NULL)
+	{
+		wchan_lock(lock->lk_wchan);
+		spinlock_release(&lock->lk_lock);
+		wchan_sleep(lock->lk_wchan);
+		//thread_sleep(lock->holder);
+		spinlock_acquire(&lock->lk_lock);
+	}
+
+	lock->holder = curthread;
+	lock->held = 1;
+}
+	spinlock_release(&lock->lk_lock);	
+	splx(spl);
 }
 
 void
 lock_release(struct lock *lock)
 {
-        // Write this
-
-        (void)lock;  // suppress warning until code gets written
+	int spl;
+    	KASSERT(lock != NULL);
+	spl = splhigh();
+	spinlock_acquire(&lock->lk_lock);
+	if(lock_do_i_hold(lock))
+	{
+		lock->held = 0;
+		lock->holder = NULL;
+		wchan_wakeone(lock->lk_wchan);
+	}
+	spinlock_release(&lock->lk_lock);
+	splx(spl);
 }
 
 bool
-lock_do_i_hold(struct lock *lock)
-{
-        // Write this
-
-        (void)lock;  // suppress warning until code gets written
-
-        return true; // dummy until code gets written
+lock_do_i_hold(struct lock *lock){
+	KASSERT(lock != NULL);
+	return (lock->holder == curthread); 
 }
-
+#endif
 ////////////////////////////////////////////////////////////
 //
 // CV
