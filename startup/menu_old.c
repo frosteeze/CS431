@@ -102,7 +102,7 @@ cmd_progthread(void *ptr, unsigned long nargs)
 
 	strcpy(progname, args[0]);
 
-	result = runprogram(progname, args, ((int) nargs));
+	result = runprogram(progname);
 	if (result) {
 		kprintf("Running program %s failed: %s\n", args[0],
 			strerror(result));
@@ -111,6 +111,14 @@ cmd_progthread(void *ptr, unsigned long nargs)
 
 	/* NOTREACHED: runprogram only returns on error. */
 }
+
+/* Testing kprintargs */
+static void cmd_kpringargs(char **argv, int argc) {
+  while(argc--)
+   kprintf("%s\n", *argv++);
+  return;
+}
+/* End Testing kpringargs */
 
 /*
  * Common code for cmd_prog and cmd_shell.
@@ -135,6 +143,9 @@ common_prog(int nargs, char **args)
 	kprintf("Warning: this probably won't work with a "
 		"synchronization-problems kernel.\n");
 #endif
+
+	/* Testing kprintargs */
+	kprintargs(args, nargs);
 
 	/* Create a process for the new program to run in. */
 	proc = proc_create_runprogram(args[0] /* name */);
