@@ -52,17 +52,12 @@
  * Calls vfs_open on progname and thus may destroy it.
  */
 int
-runprogram(char *progname, char **argv, int nargs)
+runprogram(char *progname)
 {
 	struct addrspace *as;
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
 	int result;
-
-	/* Do a test for arguments */
-	while(nargs--) {
-		kprintf("%s\n", *argv++);
-	}
 
 	/* Open the file. */
 	result = vfs_open(progname, O_RDONLY, 0, &v);
