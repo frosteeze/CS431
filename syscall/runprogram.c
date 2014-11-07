@@ -101,9 +101,28 @@ runprogram(char *progname, char **argv, int nargs)
 		/* p_addrspace will go away when curproc is destroyed */
 		return result;
 	}
+	
+	userptr_t user_args[nargs];
+	for (int args_padding=0; args_padding < nargs; args_padding++) {
+	
+		size_t len = strlen(args[args_padding]) + 1;
+		
+		stackptr -= len; //allocate space for one argument.
+		
+		stackptr -= stackptr % 4; //if it is not aligned by for force it to be.  
+		
+		args[args_padding][len-1] = '\0'; //Add Null Character to end.
+		
+		if (copyoutstr(args[args_padding], (userptr_t) stackptr, len, NULL)) {
+			panic("Copyoutstr failed for some reason!\n");
+		}
+		user_args[args_padding] = (userptr_t) stackptr;
+		kfree(args[args_padding]); //Free memory.
+	}
+	user_args[nargs] = 0; 
 
 	/* Warp to user mode. */
-	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
+	enter_new_process(nargs, (userptr_t)stackptr,
 			  stackptr, entrypoint);
 	
 	/* enter_new_process does not return. */
