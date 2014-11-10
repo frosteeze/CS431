@@ -60,9 +60,9 @@ runprogram(char *progname, char **argv, int nargs)
 	int result;
 
 	/* Do a test for arguments */
-	while(nargs--) {
-		kprintf("%s\n", *argv++);
-	}
+	//while(nargs--) {
+	//	kprintf("%s\n", *argv++);
+	//}
 
 	/* Open the file. */
 	result = vfs_open(progname, O_RDONLY, 0, &v);
@@ -120,6 +120,17 @@ runprogram(char *progname, char **argv, int nargs)
 		kfree(args[args_padding]); //Free memory.
 	}
 	user_args[nargs] = 0; 
+	
+	
+	//Copy kernel stack to user stack
+	int decr = sizeof(userptr_t) * (nargs+1);
+	stackptr -= decr;
+	stackptr -= stackptr % 8; // 8 aligning here since we don't move it again
+	if (copyout(user_args, (userptr_t) stackptr, decr)) {
+		panic("could not complete copyout\n");
+	}
+
+	kfree(args); //Free memory allocated to args.
 
 	/* Warp to user mode. */
 	enter_new_process(nargs, (userptr_t)stackptr,
