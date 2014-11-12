@@ -44,6 +44,7 @@
 #include <vfs.h>
 #include <syscall.h>
 #include <test.h>
+#include <copyinout.h>
 
 /*
  * Load program "progname" and start running it in usermode.
@@ -52,17 +53,12 @@
  * Calls vfs_open on progname and thus may destroy it.
  */
 int
-runprogram(char *progname, char **argv, int nargs)
+runprogram(char *progname, char** args, int argc)
 {
 	struct addrspace *as;
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
 	int result;
-
-	/* Do a test for arguments */
-	while(nargs--) {
-		kprintf("%s\n", *argv++);
-	}
 
 	/* Open the file. */
 	result = vfs_open(progname, O_RDONLY, 0, &v);
@@ -87,7 +83,7 @@ runprogram(char *progname, char **argv, int nargs)
 	/* Load the executable. */
 	result = load_elf(v, &entrypoint);
 	if (result) {
-		/* p_addrspace will go away when curproc is destroyed */
+		/* thread_exit destroys curthread->t_addrspace */
 		vfs_close(v);
 		return result;
 	}
@@ -102,12 +98,57 @@ runprogram(char *progname, char **argv, int nargs)
 		return result;
 	}
 
+	/* Initialize an array of pointers that stores the pointer to the
+	 * string arguments in the user stack */
+	char** argv = (char **)kmalloc((argc + 1) * sizeof(char*)); // 1 add for the null at the end
+	if (argv == NULL) {
+		return ENOMEM;
+	}
+
+	argv[argc] = 0;// NULL terminate the array
+
+	int i;
+	int total_kernel_mem = 0; //total memory for stack
+
+	/* Copy each string argument from kernel memory onto the user stack,
+	 * and store the user pointer to the argument in argv 
+	 * 1. get the arguments length and add 1 
+	 * 2. add the length of the argument to total kernel mem	
+	 * 3. allocate stack space for the current argument
+	 * 4.Copy the argument from a kernel address to the user stack
+	 * 5.Copy the pointer to the argument from the stack to argv. 
+	 */
+	for (i = argc - 1; i >= 0; i--) {
+		int len = strlen(args[i]) + 1;
+
+		total_kernel_mem += len;
+
+		stackptr -= len;
+
+		copyoutstr(args[i], (userptr_t)stackptr, len, NULL);
+
+		argv[i] = (char *)stackptr;
+	}
+
+	/* fix any alignment issues to user stack */
+
+	stackptr -= 4 - (total_kernel_mem % 4); // 4 - (3 % 4) = 1
+
+	/* Copy the array of user pointers argv onto the user stack  */
+	for (i = argc; i >= 0; i--) {
+		stackptr -= 4;
+		copyout(&argv[i], (userptr_t)stackptr, 4);
+	}
+
+	kfree(argv);
+
 	/* Warp to user mode. */
-	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
+	enter_new_process(argc, (userptr_t)stackptr /*userspace addr of argv*/,
 			  stackptr, entrypoint);
 	
 	/* enter_new_process does not return. */
 	panic("enter_new_process returned\n");
 	return EINVAL;
 }
+
 

@@ -93,9 +93,9 @@ cmd_progthread(void *ptr, unsigned long nargs)
 
 	KASSERT(nargs >= 1);
 
-	if (nargs > 2) {
+	/* if (nargs > 2) {
 		kprintf("Warning: argument passing from menu not supported\n");
-	}
+	}  Passing arguments is now supported, this is not needed */
 
 	/* Hope we fit. */
 	KASSERT(strlen(args[0]) < sizeof(progname));
@@ -171,7 +171,7 @@ cmd_dth(int nargs, char **args)
 {
 	(void) nargs;
 	(void) args;
-	dbflags = 0x0010;
+	dbflags |= 0x0010;
 	kprintf("DB_THREADS messages enabled.\n");
 	return 0;
 }
@@ -726,3 +726,4 @@ menu(char *args)
 		menu_execute(buf, 0);
 	}
 }
+
