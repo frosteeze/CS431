@@ -53,7 +53,7 @@
  * Calls vfs_open on progname and thus may destroy it.
  */
 int
-runprogram(char *progname, char** args, int argc)
+runprogram(char *progname, char** args, unsigned long nargs)
 {
 	struct addrspace *as;
 	struct vnode *v;
@@ -100,12 +100,12 @@ runprogram(char *progname, char** args, int argc)
 
 	/* Initialize an array of pointers that stores the pointer to the
 	 * string arguments in the user stack */
-	char** argv = (char **)kmalloc((argc + 1) * sizeof(char*)); // 1 add for the null at the end
+	char** argv = (char **)kmalloc((nargs + 1) * sizeof(char*)); // 1 add for the null at the end
 	if (argv == NULL) {
 		return ENOMEM;
 	}
 
-	argv[argc] = 0;// NULL terminate the array
+	argv[nargs] = 0;// NULL terminate the array
 
 	int i;
 	int total_kernel_mem = 0; //total memory for stack
@@ -118,7 +118,7 @@ runprogram(char *progname, char** args, int argc)
 	 * 4.Copy the argument from a kernel address to the user stack
 	 * 5.Copy the pointer to the argument from the stack to argv. 
 	 */
-	for (i = argc - 1; i >= 0; i--) {
+	for (i = nargs - 1; i >= 0; i--) {
 		int len = strlen(args[i]) + 1;
 
 		total_kernel_mem += len;
@@ -135,7 +135,7 @@ runprogram(char *progname, char** args, int argc)
 	stackptr -= 4 - (total_kernel_mem % 4); // 4 - (3 % 4) = 1
 
 	/* Copy the array of user pointers argv onto the user stack  */
-	for (i = argc; i >= 0; i--) {
+	for (i = nargs; i >= 0; i--) {
 		stackptr -= 4;
 		copyout(&argv[i], (userptr_t)stackptr, 4);
 	}
@@ -143,7 +143,7 @@ runprogram(char *progname, char** args, int argc)
 	kfree(argv);
 
 	/* Warp to user mode. */
-	enter_new_process(argc, (userptr_t)stackptr /*userspace addr of argv*/,
+	enter_new_process(nargs, (userptr_t)stackptr /*userspace addr of argv*/,
 			  stackptr, entrypoint);
 	
 	/* enter_new_process does not return. */
