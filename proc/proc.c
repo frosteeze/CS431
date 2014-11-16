@@ -69,7 +69,7 @@ static struct semaphore *proc_count_mutex;
 struct semaphore *no_proc_sem;   
 #endif  // UW
 
-
+static pid_t next_pid;
 
 /*
  * Create a proc structure.
@@ -102,6 +102,8 @@ proc_create(const char *name)
 #ifdef UW
 	proc->console = NULL;
 #endif // UW
+
+proc->p_pid = get_next_pid();
 
 	return proc;
 }
@@ -363,4 +365,9 @@ curproc_setas(struct addrspace *newas)
 	proc->p_addrspace = newas;
 	spinlock_release(&proc->p_lock);
 	return oldas;
+}
+
+pid_t
+get_next_pid(void) {
+    return next_pid++;
 }

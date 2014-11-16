@@ -132,6 +132,9 @@ syscall(struct trapframe *tf)
 #endif // UW
 
 	    /* Add stuff here */
+	case SYS_fork:
+      err = sys_fork(tf, &retval);
+          break;
  
 	default:
 	  kprintf("Unknown syscall %d\n", callno);
@@ -179,5 +182,14 @@ syscall(struct trapframe *tf)
 void
 enter_forked_process(struct trapframe *tf)
 {
-	(void)tf;
+	 struct trapframe childTrapFrame;
+    bzero(&childTrapFrame, sizeof(childTrapFrame));
+    
+    childTrapFrame = *tf;
+    
+    childTrapFrame.tf_v0 = 0; //for testing
+    childTrapFrame.tf_a3 = 0;      /* signal no error */
+    childTrapFrame.tf_epc += 4;    /* advance program counter */
+    
+    mips_usermode(&childTrapFrame);
 }

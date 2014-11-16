@@ -48,6 +48,47 @@ void sys__exit(int exitcode) {
   panic("return from thread_exit in sys_exit\n");
 }
 
+int sys_fork(struct trapframe *tf, int *retval)
+{
+	struct proc *p = curproc;
+	struct trapframe *child_trapframe = kmalloc(sizeof(struct trapframe));
+	int result;
+	
+	if(child_trapframe == NULL)
+	{
+		*retval = -1;
+		return ENOMEM;
+	}
+	
+	
+	
+	struct proc *child_proc = proc_create_runprogram(p->p_name);
+	
+	if(child_proc == NULL)
+	{
+		*retval = -1;
+		return ENOMEM;
+	}
+	
+	memcpy(child_trapframe, tf, sizeof(struct trapframe));
+	
+	result = as_copy(p->p_addrspace, &child_proc->p_addrspace);
+	
+	if(result) {
+		panic("\nNo address space defined %d\n",result);
+		*retval = -1;
+		return EINVAL;
+	}
+	
+	
+	result = thread_fork(curthread->t_name, child_proc, enter_forked_process, child_trapframe, NULL);
+	if (result){
+		return result;
+	}else
+	*retval = child_proc->p_pid;
+	return(0);
+}
+
 
 /* stub handler for getpid() system call                */
 int
