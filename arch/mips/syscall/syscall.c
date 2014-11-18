@@ -35,7 +35,7 @@
 #include <thread.h>
 #include <current.h>
 #include <syscall.h>
-
+#include "opt-A2.h"
 
 /*
  * System call dispatcher.
@@ -109,10 +109,11 @@ syscall(struct trapframe *tf)
 				 (userptr_t)tf->tf_a1);
 		break;
 #ifdef UW
+#if OPT_A2
 	case SYS_write:
 	  err = sys_write((int)tf->tf_a0,
 			  (userptr_t)tf->tf_a1,
-			  (int)tf->tf_a2,
+			  tf->tf_a2,
 			  (int *)(&retval));
 	  break;
 	case SYS__exit:
@@ -129,9 +130,24 @@ syscall(struct trapframe *tf)
 			    (int)tf->tf_a2,
 			    (pid_t *)&retval);
 	  break;
+#endif //OPTA2
 #endif // UW
 
 	    /* Add stuff here */
+
+	case SYS_open:
+		err = sys_open((userptr_t)tf->tf_a0, tf->tf_a1, tf->tf_a2, 
+			       (pid_t *)&retval);
+		break;
+	    case SYS_close:
+		err = sys_close(tf->tf_a0);
+		break;
+
+ 	case SYS_read:
+                err = sys_read(tf->tf_a0, (userptr_t)tf->tf_a1, tf->tf_a2,
+                               &retval);
+                break;
+
  
 	default:
 	  kprintf("Unknown syscall %d\n", callno);
