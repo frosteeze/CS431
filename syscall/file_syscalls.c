@@ -11,7 +11,6 @@
 #include <file.h>
 #include <copyinout.h>
 #include "opt-A2.h"
-
 #if OPT_A2
 static
 void
@@ -63,6 +62,7 @@ sys_write(int fd,userptr_t buf,size_t len,int *retval)
 	//Calculate how much left is in the lifetable
 	*retval = len - user_uio.uio_resid;
 
+	filetable->filetable_entries[fd]->filetable_pos += *retval;
 	spinlock_release(&filetable->filetable_spinlock);
 	return 0;
 }
@@ -117,14 +117,18 @@ sys_read(int fd, userptr_t buf, size_t size, int *retval)
     offset = filetable->filetable_entries[fd]->filetable_pos;
 	mk_useruio(&user_iov, &user_uio, buf, size, offset, UIO_READ);
 
-	//Does the actually read
+	//Does the actual read using VOP_read
     spinlock_release(&filetable->filetable_spinlock);
 	result = VOP_READ(filetable->filetable_entries[fd]->filetable_vnode, &user_uio);
 	if (result) {
 		return result;
 	}
 
-	(void)retval;
+	//The amount of the buffer is subtracted to the amount that is still left
+	*retval = size - user_uio.uio_resid;
+	spinlock_acquire(&filetable->filetable_spinlock);
+    filetable->filetable_entries[fd]->filetable_pos += *retval;
+
     spinlock_release(&filetable->filetable_spinlock);
 	return 0;
 }

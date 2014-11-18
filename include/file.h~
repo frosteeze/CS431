@@ -27,7 +27,7 @@ int filetable_init(void);
 
 
 //Opens the file, but has to go through file syscall first
-int file_open(char *filename, int flags, int mode, int *retfd);
+int file_open(char *filename, int flags, int mode);
 
 //Closes the file
 int file_close(int fd);

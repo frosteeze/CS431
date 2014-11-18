@@ -64,9 +64,7 @@ file_open(char *filename, int flags, int mode, int *retfd)
 //This function closes the file
 int
 file_close(int fd)
-{
-    DEBUG(DB_VFS, "*** Closing fd %d\n", fd);
-    
+{    
     struct filetable *filetable = curthread->t_filetable;
     spinlock_acquire(&filetable->filetable_spinlock);
     
@@ -120,7 +118,7 @@ filetable_init(void)
     
 	spinlock_init(&filetable->filetable_spinlock);
     
-    /* Update current thread's filetable field. */
+    //Update the thread's filetable or else TLB miss will occur
     curthread->t_filetable = filetable;
     
     return 0;
