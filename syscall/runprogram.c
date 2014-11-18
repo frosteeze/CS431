@@ -44,8 +44,11 @@
 #include <vfs.h>
 #include <syscall.h>
 #include <test.h>
+#include <file.h>
 #include <copyinout.h>
+#include "opt-A2.h"
 
+#if OPT_A2
 /*
  * Load program "progname" and start running it in usermode.
  * Does not return except on error.
@@ -141,6 +144,7 @@ runprogram(char *progname, char** args, unsigned long nargs)
 	}
 
 	kfree(argv);
+	filetable_init();
 
 	/* Warp to user mode. */
 	enter_new_process(nargs, (userptr_t)stackptr /*userspace addr of argv*/,
@@ -150,5 +154,5 @@ runprogram(char *progname, char** args, unsigned long nargs)
 	panic("enter_new_process returned\n");
 	return EINVAL;
 }
-
+#endif
 
