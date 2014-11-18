@@ -199,7 +199,7 @@ enter_forked_process(struct trapframe *tf , unsigned long data2)
 
     bzero(&childTrapFrame, sizeof(struct trapframe));
     memcpy(&childTrapFrame, tf,  sizeof(struct trapframe));
-	(void)data2;
+	//(void)data2;
     bzero(&ft, sizeof(struct filetable));			
     memcpy(&ft, (struct filetable*)data2, sizeof(struct filetable));
 	
