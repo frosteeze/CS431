@@ -26,10 +26,13 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+#include "opt-A2.h"
+
 
 #include <types.h>
 #include <kern/errno.h>
 #include <kern/syscall.h>
+#include <spl.h>
 #include <lib.h>
 #include <mips/trapframe.h>
 #include <thread.h>
@@ -131,11 +134,11 @@ syscall(struct trapframe *tf)
 	  break;
 #endif // UW
 
-	    /* Add stuff here */
+	#if OPT_A2   
 	case SYS_fork:
-      err = sys_fork(tf, &retval);
+      	  err = sys_fork(tf, (pid_t *)&retval);
           break;
- 
+ 	#endif
 	default:
 	  kprintf("Unknown syscall %d\n", callno);
 	  err = ENOSYS;
@@ -170,26 +173,27 @@ syscall(struct trapframe *tf)
 	/* ...or leak any spinlocks */
 	KASSERT(curthread->t_iplhigh_count == 0);
 }
-
+#if OPT_A2
 /*
  * Enter user mode for a newly forked process.
- *
- * This function is provided as a reminder. You need to write
- * both it and the code that calls it.
- *
- * Thus, you can trash it and do things another way if you prefer.
  */
 void
 enter_forked_process(struct trapframe *tf)
 {
+	int s;
+	s = splhigh();
 	 struct trapframe childTrapFrame;
-    bzero(&childTrapFrame, sizeof(childTrapFrame));
-    
-    childTrapFrame = *tf;
-    
+    bzero(&childTrapFrame, sizeof(struct trapframe));
+    memcpy(&childTrapFrame, tf,  sizeof(struct trapframe));			
+	
+    kfree(tf);
     childTrapFrame.tf_v0 = 0; //for testing
     childTrapFrame.tf_a3 = 0;      /* signal no error */
     childTrapFrame.tf_epc += 4;    /* advance program counter */
-    
+
+    //kprintf("I got to enter mips usermode\n");
+    //mips_usermode(tf);
+    splx(s);
     mips_usermode(&childTrapFrame);
 }
+#endif

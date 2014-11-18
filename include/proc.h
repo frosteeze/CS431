@@ -35,6 +35,7 @@
  *
  * Note: curproc is defined by <current.h>.
  */
+#include "opt-A2.h"
 
 #include <spinlock.h>
 #include <thread.h> /* required for struct threadarray */
@@ -58,7 +59,9 @@ struct proc {
 
 	/* VM */
 	struct addrspace *p_addrspace;	/* virtual address space */
-	pid_t p_pid; 					/* Pid for this process*/
+#if OPT_A2
+	pid_t p_pid; 			/* Pid for this process*/
+#endif
 	/* VFS */
 	struct vnode *p_cwd;		/* current working directory */
 
@@ -73,16 +76,6 @@ struct proc {
 
 	/* add more material here as needed */
 };
-
-//mod please 
-// struct pid_exitcode_map {
-    // pid_t parent_pid;       /* the parent process id */
-    // pid_t pid;              /* this process's process id */
-    // struct wchan *exit_wchan;       /* wait channel for anyone calling waitpid for this process id */
-    // int exitcode;           /* the exit code from this process */
-    // volatile bool isAlive;
-// };
-
 
 /* This is the process structure for the kernel and for kernel-only threads. */
 extern struct proc *kproc;
@@ -113,7 +106,9 @@ struct addrspace *curproc_getas(void);
 /* Change the address space of the current process, and return the old one. */
 struct addrspace *curproc_setas(struct addrspace *);
 
+#if OPT_A2
 /* Returns the next usable or unassigned pid.*/
 pid_t get_next_pid(void);
-
+#endif
 #endif /* _PROC_H_ */
+

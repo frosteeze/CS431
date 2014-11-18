@@ -41,6 +41,8 @@
  * Unless you're implementing multithreaded user processes, the only
  * process that will have more than one thread is the kernel process.
  */
+#include "opt-A2.h"
+
 
 #include <types.h>
 #include <proc.h>
@@ -102,9 +104,9 @@ proc_create(const char *name)
 #ifdef UW
 	proc->console = NULL;
 #endif // UW
-
+#if OPT_A2
 proc->p_pid = get_next_pid();
-
+#endif
 	return proc;
 }
 
@@ -366,8 +368,9 @@ curproc_setas(struct addrspace *newas)
 	spinlock_release(&proc->p_lock);
 	return oldas;
 }
-
+#if OPT_A2
 pid_t
 get_next_pid(void) {
     return next_pid++;
 }
+#endif
