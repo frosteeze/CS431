@@ -44,9 +44,13 @@
 #include <vfs.h>
 #include <syscall.h>
 #include <test.h>
+<<<<<<< HEAD
 #include <file.h>
 #include <copyinout.h>
 #include "opt-A2.h"
+=======
+#include <copyinout.h>
+>>>>>>> a4e7f8705fc3f409f2c4002310ac62729cbb4973
 
 #if OPT_A2
 /*
@@ -144,7 +148,10 @@ runprogram(char *progname, char** args, unsigned long nargs)
 	}
 
 	kfree(argv);
+<<<<<<< HEAD
 	filetable_init();
+=======
+>>>>>>> a4e7f8705fc3f409f2c4002310ac62729cbb4973
 
 	/* Warp to user mode. */
 	enter_new_process(nargs, (userptr_t)stackptr /*userspace addr of argv*/,
@@ -155,4 +162,5 @@ runprogram(char *progname, char** args, unsigned long nargs)
 	return EINVAL;
 }
 #endif
+
 
