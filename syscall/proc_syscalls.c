@@ -7,10 +7,12 @@
 #include <mips/trapframe.h>
 #include <lib.h>
 #include <syscall.h>
+#include <spl.h>
 #include <current.h>
 #include <proc.h>
 #include <thread.h>
 #include <addrspace.h>
+#include <file.h>
 #include <copyinout.h>
 
   /* this implementation of sys__exit does not do anything with the exit code */
@@ -53,6 +55,8 @@ void sys__exit(int exitcode) {
 #if OPT_A2
 int sys_fork(struct trapframe *tf, pid_t *retval)
 {
+	int s;
+	s = splhigh();
 	struct proc *p = curproc; // get the current process
 	struct trapframe *child_trapframe; // define a trapframe pointer 
 
@@ -86,18 +90,31 @@ int sys_fork(struct trapframe *tf, pid_t *retval)
 
 
 	memcpy(child_trapframe, tf, sizeof(struct trapframe));// copy the contence of the parent tf to the child_tf
-
+	struct filetable *ft; 
+	
+	ft = kmalloc(sizeof(struct filetable));
+	if(ft == NULL)
+	{
+		panic("\nCould not create space for FileTable\n");
+		*retval = -1;
+		return ENOMEM;
+	}
+	//ft = curthread->t_filetable;
+	//kprintf("Handling filetable now!!!!!\n");
+	memcpy(ft,curthread->t_filetable, sizeof(struct filetable));
 
 	
-	int err = thread_fork(curthread->t_name, child_proc, (void*)enter_forked_process, child_trapframe, 0); // fork a new thread for the child process with the same name as the parents threads pass the child_tf
+	int err = thread_fork(curthread->t_name, child_proc, (void*)enter_forked_process, child_trapframe, (unsigned long)ft); // fork a new thread for the child process with the same name as the parents threads pass the child_tf
 	//and pass the enter forked process.
+	splx(s);
 	if (err){
 		*retval = -1;
 		return err;
-	}else
+	}else{
 	*retval = child_proc->p_pid;//return the childs pid 
 	//kprintf("This is the id of process: %d\n", (int)*retval);
 	return(0);
+	}
 }
 
 #endif
@@ -150,4 +167,3 @@ sys_waitpid(pid_t pid,
   *retval = pid;
   return(0);
 }
-

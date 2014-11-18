@@ -140,4 +140,3 @@ sys_close(int fd)
 	return file_close(fd);
 }
 #endif
-

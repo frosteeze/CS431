@@ -38,7 +38,6 @@
 #include <thread.h>
 #include <current.h>
 #include <syscall.h>
-#include "opt-A2.h"
 
 /*
  * System call dispatcher.
@@ -191,16 +190,26 @@ syscall(struct trapframe *tf)
  * Enter user mode for a newly forked process.
  */
 void
-enter_forked_process(struct trapframe *tf)
+enter_forked_process(struct trapframe *tf , unsigned long data2)
 {
 	int s;
 	s = splhigh();
-	 struct trapframe childTrapFrame;
+	struct trapframe childTrapFrame;
+	struct filetable ft;
+
     bzero(&childTrapFrame, sizeof(struct trapframe));
-    memcpy(&childTrapFrame, tf,  sizeof(struct trapframe));			
+    memcpy(&childTrapFrame, tf,  sizeof(struct trapframe));
+	(void)data2;
+    bzero(&ft, sizeof(struct filetable));			
+    memcpy(&ft, (struct filetable*)data2, sizeof(struct filetable));
 	
+	curthread->t_filetable = &ft;
+	//kprintf("Handling filetable now!!!!!\n");	
+     //ft = *(struct filetable*)data2;
+	
+    //curthread->t_filetable = &ft;
     kfree(tf);
-    childTrapFrame.tf_v0 = 0; //for testing
+    childTrapFrame.tf_v0 = 0; 	   /* return value */
     childTrapFrame.tf_a3 = 0;      /* signal no error */
     childTrapFrame.tf_epc += 4;    /* advance program counter */
 
