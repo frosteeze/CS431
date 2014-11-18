@@ -57,12 +57,12 @@ void enter_new_process(int argc, userptr_t argv, vaddr_t stackptr,
 
 int sys_reboot(int code);
 int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
-<<<<<<< HEAD
+
 int sys_fork(struct trapframe *tf, pid_t* retval);
-=======
+
 
 #if OPT_A2
->>>>>>> master
+
 #ifdef UW
 int sys_open(userptr_t filename, int flags, int mode, int *retval);
 int sys_close(int fd);
