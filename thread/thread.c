@@ -151,6 +151,9 @@ thread_create(const char *name)
 
 	/* If you add to struct thread, be sure to initialize here */
 
+
+	//thread->t_filetable = NULL;
+
 	return thread;
 }
 
@@ -1207,3 +1210,4 @@ interprocessor_interrupt(void)
 	curcpu->c_ipi_pending = 0;
 	spinlock_release(&curcpu->c_ipi_lock);
 }
+

@@ -1,0 +1,269 @@
+#include <types.h>
+#include <lib.h>
+#include <synchprobs.h>
+#include <synch.h>
+
+/* 
+ * This simple default synchronization mechanism allows only creature at a time to
+ * eat.   The globalCatMouseSem is used as a a lock.   We use a semaphore
+ * rather than a lock so that this code will work even before locks are implemented.
+ */
+
+/* 
+ * Replace this default synchronization mechanism with your own (better) mechanism
+ * needed for your solution.   Your mechanism may use any of the available synchronzation
+ * primitives, e.g., semaphores, locks, condition variables.   You are also free to 
+ * declare other global variables if your solution requires them.
+ */
+
+/*
+ * replace this with declarations of any synchronization and other variables you need here
+ */
+
+
+static struct lock **bowl_locks; // an array of locks for each bowl
+static struct cv *block_mice;	// stop mice from eating until a signal is given
+static struct cv *block_cats; // stop cats from eating until a signal is given
+
+
+static volatile bool whos_eating;    //  true = mice, false = cats defines when cats or mice are eating
+
+static struct semaphore *cat_mutex;	 // used to protect sections during variable changes 
+static struct semaphore *mice_mutex; //	used to protect sections during variable changes
+ 
+static struct semaphore *whos_mutex; // used to protect sections during variable changes for when cats or mice 
+									 // switch for there turn to eat. 
+
+static struct semaphore *mutex_cats_wait; // used to protect sections during variable changes 	
+static struct semaphore *mutex_mice_wait; // used to protect sections during variable changes 
+
+static volatile int num_cats_eating; // number of cats eating 
+static volatile int num_mice_eating; // number of mice eating 
+
+static volatile int num_cats_waiting; // number of cats waiting to eat 
+static volatile int num_mice_waiting; // number of mice waiting to eat 
+
+
+/* 
+ * The CatMouse simulation will call this function once before any cat or
+ * mouse tries to each.
+ *
+ * You can use it to initialize synchronization and other variables.
+ * 
+ * parameters: the number of bowls
+ */
+void
+catmouse_sync_init(int bowls)
+{
+  /* replace this default implementation with your own implementation of catmouse_sync_init */
+    bowl_locks = kmalloc(bowls * sizeof(struct lock *));
+    for (int i = 0; i < bowls; i++) {
+        bowl_locks[i] = lock_create("bowl lock #" + i);
+    }
+    
+    
+    
+    block_mice = cv_create("block mice");
+    block_cats = cv_create("block cats");
+    
+    cat_mutex = sem_create("cat mutex", 1);
+    mice_mutex = sem_create("mice mutex", 1);
+	
+    whos_mutex = sem_create("whos mutex", 1); // lock the 
+	
+    mutex_cats_wait = sem_create("cat_wait_mutex", 1);
+    mutex_mice_wait = sem_create("mice_wait_mutex", 1);
+	
+	num_cats_eating = 0; 
+    num_mice_eating = 0;
+	
+    num_cats_waiting = 0;
+    num_mice_waiting = 0;
+	
+    whos_eating = false; // cats turn to eat. Defined so cats always eat on the first iteration.
+						 // this can be randomize easily but for this project it is hard coded for 
+						 // ease of implementation.
+    return;
+}
+
+/* 
+ * The CatMouse simulation will call this function once after all cat
+ * and mouse simulations are finished.
+ *
+ * You can use it to clean up any synchronization and other variables.
+ *
+ * parameters: the number of bowls
+ */
+void
+catmouse_sync_cleanup(int bowls)
+{
+  /* replace this default implementation with your own implementation of catmouse_sync_cleanup */
+    for (int i = 0; i < bowls; i++) {
+        lock_destroy(bowl_locks[i]); // destroy the lock for each bowl.
+    }
+	
+    kfree(bowl_locks); // free the memory of the bowl locks array.
+    
+    cv_destroy(block_mice);
+    cv_destroy(block_cats);
+    
+    sem_destroy(cat_mutex);
+    sem_destroy(mice_mutex);
+
+}
+
+
+/*
+ * The CatMouse simulation will call this function each time a cat wants
+ * to eat, before it eats.
+ * This function should cause the calling thread (a cat simulation thread)
+ * to block until it is OK for a cat to eat at the specified bowl.
+ *
+ * parameter: the number of the bowl at which the cat is trying to eat
+ *             legal bowl numbers are 1..NumBowls
+ *
+ * return value: none
+ */
+
+void
+cat_before_eating(unsigned int bowl) 
+{
+
+    KASSERT(bowl_locks[bowl-1] != NULL); // [bowl-1] because the array starts at 0 but he bowls start at
+										 // 1 this is to "merge" indexes so they match.  
+    P(mutex_cats_wait);// protect this critical section
+    num_cats_waiting++;// register any cats that want to eat these are now cats waiting to eat. 
+    V(mutex_cats_wait);
+	
+    lock_acquire(bowl_locks[bowl-1]);	 // try to acquire the lock 	
+
+    while(whos_eating == true || num_mice_eating > 0) { // If any part is true mice are eating so wait for them to finish.  
+        cv_wait(block_mice, bowl_locks[bowl-1]);	// 
+    }
+	
+    P(mutex_cats_wait);	// protect this critical section	 
+    num_cats_waiting--;//if you get to this point cats are no longer waiting to eat they are eating
+    V(mutex_cats_wait);
+	
+    P(cat_mutex);// protect this critical section
+    num_cats_eating++; //register that this cat is now eating 
+    V(cat_mutex);
+
+}
+
+/*
+ * The CatMouse simulation will call this function each time a cat finishes
+ * eating.
+ *
+ * You can use this function to wake up other creatures that may have been
+ * waiting to eat until this cat finished.
+ *
+ * parameter: the number of the bowl at which the cat is finishing eating.
+ *             legal bowl numbers are 1..NumBowls
+ *
+ * return value: none
+ */
+
+void
+cat_after_eating(unsigned int bowl) 
+{
+
+    KASSERT(bowl_locks[bowl-1] != NULL);
+	
+    P(cat_mutex);	// protect this critical section
+    num_cats_eating--;// cat has finished eating 
+    V(cat_mutex);
+	
+    lock_release(bowl_locks[bowl-1]); // release the lock
+	
+    if(num_cats_eating == 0 && num_cats_waiting == 0 && num_mice_waiting > 0) {
+	
+        P(whos_mutex); // protect this critical section
+        whos_eating = true; // mice can now eat
+        V(whos_mutex);
+
+        cv_broadcast(block_cats, bowl_locks[bowl-1]); // signal mice that this bowl in clear to eat in.
+    }
+    
+}
+
+/*
+ * The CatMouse simulation will call this function each time a mouse wants
+ * to eat, before it eats.
+ * This function should cause the calling thread (a mouse simulation thread)
+ * to block until it is OK for a mouse to eat at the specified bowl.
+ *
+ * parameter: the number of the bowl at which the mouse is trying to eat
+ *             legal bowl numbers are 1..NumBowls
+ *
+ * return value: none
+ */
+
+void
+mouse_before_eating(unsigned int bowl) 
+{
+
+    KASSERT(bowl_locks[bowl-1] != NULL);
+	
+    P(mutex_mice_wait);
+    num_mice_waiting++;
+    V(mutex_mice_wait);
+	
+
+    lock_acquire(bowl_locks[bowl-1]);
+	
+
+    if(num_cats_eating == 0 && num_cats_waiting == 0) {
+	
+        P(whos_mutex);
+        whos_eating = true; // mices turn to eat 
+        V(whos_mutex);
+    }
+
+    while((whos_eating == false || num_cats_eating > 0)) { //cats are eating don't let mice eat
+        cv_wait(block_cats, bowl_locks[bowl-1]); //wait any mice threads that get here 
+    }
+	
+    P(mutex_mice_wait);
+    num_mice_waiting--;
+    V(mutex_mice_wait);
+	
+    P(mice_mutex);
+    num_mice_eating++;
+    V(mice_mutex);
+}
+
+/*
+ * The CatMouse simulation will call this function each time a mouse finishes
+ * eating.
+ *
+ * You can use this function to wake up other creatures that may have been
+ * waiting to eat until this mouse finished.
+ *
+ * parameter: the number of the bowl at which the mouse is finishing eating.
+ *             legal bowl numbers are 1..NumBowls
+ *
+ * return value: none
+ */
+
+void
+mouse_after_eating(unsigned int bowl) 
+{
+    KASSERT(bowl_locks[bowl-1] != NULL);
+    
+    P(mice_mutex);
+    num_mice_eating--;
+    V(mice_mutex);
+	
+    lock_release(bowl_locks[bowl-1]);
+	
+    if(num_mice_eating == 0 && num_mice_waiting == 0 && num_cats_waiting > 0) { 
+	//mice have finished eating setup for cats turn to eat. 
+        P(whos_mutex);
+        whos_eating = false;// cats turn to eat 
+        V(whos_mutex);
+		
+        cv_broadcast(block_mice, bowl_locks[bowl-1]);//stop blocking cats from eating. 
+    }
+    
+}

@@ -41,6 +41,7 @@
  * Unless you're implementing multithreaded user processes, the only
  * process that will have more than one thread is the kernel process.
  */
+#include "opt-A2.h"
 
 #include <types.h>
 #include <proc.h>
@@ -69,7 +70,7 @@ static struct semaphore *proc_count_mutex;
 struct semaphore *no_proc_sem;   
 #endif  // UW
 
-
+static pid_t next_pid;
 
 /*
  * Create a proc structure.
@@ -102,7 +103,15 @@ proc_create(const char *name)
 #ifdef UW
 	proc->console = NULL;
 #endif // UW
+#if OPT_A2
+proc->p_filetable = NULL;
+proc->p_pid = 0;
+proc->list_ptr = NULL;
 
+
+
+
+#endif
 	return proc;
 }
 
@@ -183,8 +192,12 @@ proc_destroy(struct proc *proc)
 	}
 	V(proc_count_mutex);
 #endif // UW
+	/*struct process_list_entry *temp = proc->list_ptr;
 	
-
+  if (temp->wait_cv != NULL) {
+    cv_destroy(temp->wait_cv);
+  }*/
+	
 }
 
 /*
@@ -208,6 +221,43 @@ proc_bootstrap(void)
     panic("could not create no_proc_sem semaphore\n");
   }
 #endif // UW 
+
+ if (list_lock == NULL) {
+    list_lock = lock_create("list_lock");
+    if (list_lock == NULL) {
+      panic("process_bootstrap: lock_create failed\n");
+    }
+  }
+
+
+
+//init the process list
+  struct process_list_entry* temp = kmalloc(sizeof(struct process_list_entry));
+  if (temp == NULL) {
+    kfree(temp);
+    panic("process_bootstrap: Out of memory\n");
+  } 
+  
+  temp->wait_cv = cv_create("wait_cv");
+  if (temp->wait_cv == NULL) {
+    kfree(temp);
+    panic("process_bootstrap: create_cv failed\n");
+  }
+  
+  //This is a dummy it should point to the kernel process but doesn't because no one should ever need
+  //access the kernel process pid this way. 
+   temp->pid = 101;
+   temp->parent_pid = 100;
+   temp->status = PROCESS_RUNNING;
+   temp->process_ptr = NULL;
+   temp->exitcode = EXIT_SUCCESS;
+   temp->next = NULL;	//doesn't point to kernel process
+   kproc->list_ptr = temp;
+   kproc->p_pid = 101;
+   
+   process_list_head = temp; 
+   process_list_tail = temp;
+
 }
 
 /*
@@ -271,6 +321,31 @@ proc_create_runprogram(const char *name)
 	V(proc_count_mutex);
 #endif // UW
 
+struct process_list_entry* temp = kmalloc(sizeof(struct process_list_entry));
+  if (temp == NULL) {
+    kfree(proc->p_name);
+    kfree(proc);
+    return NULL;;
+  }
+  temp->wait_cv = cv_create("wait_cv");
+  if (temp->wait_cv == NULL) {
+    kfree(temp);
+    kfree(proc->p_name);
+    kfree(proc);
+    return NULL;;
+  }
+  lock_acquire(list_lock);
+  temp->pid = process_list_tail->pid+1;
+  temp->parent_pid = curproc->p_pid;
+  temp->status = PROCESS_RUNNING;
+  temp->exitcode = EXIT_SUCCESS;
+  temp->process_ptr = proc;
+  temp->next = NULL;
+  process_list_tail->next = temp;
+  process_list_tail = process_list_tail->next;
+  proc->list_ptr = temp;
+  proc->p_pid = temp->pid;
+  lock_release(list_lock);
 	return proc;
 }
 
@@ -324,6 +399,27 @@ proc_remthread(struct thread *t)
 	panic("Thread (%p) has escaped from its process (%p)\n", t, proc);
 }
 
+void
+proc_remallthreads(struct proc *p)
+{
+	struct proc *proc;
+	unsigned i, num;
+
+	proc = p;
+	KASSERT(proc != NULL);
+
+	spinlock_acquire(&proc->p_lock);
+	/* ugh: find the thread in the array */
+	num = threadarray_num(&proc->p_threads);
+	for (i=0; i<num; i++) {
+			threadarray_remove(&proc->p_threads, i);
+			spinlock_release(&proc->p_lock);
+			return;
+	}
+	spinlock_release(&proc->p_lock);
+}
+
+
 /*
  * Fetch the address space of the current process. Caution: it isn't
  * refcounted. If you implement multithreaded processes, make sure to
@@ -364,3 +460,38 @@ curproc_setas(struct addrspace *newas)
 	spinlock_release(&proc->p_lock);
 	return oldas;
 }
+
+void process_exit()
+{
+	struct proc *cur;
+	cur = curproc;
+	
+	KASSERT(curproc == kproc || curproc == NULL);	
+	
+	if (curproc == kproc) {
+	  proc_remallthreads(cur);
+	}
+
+/* Make sure we *are* detached (move this only if you're sure!) */
+
+	//KASSERT(cur->p_proc == NULL);
+// destroy the process_list_entry for this process
+
+ 
+	/* Check the stack guard band. */
+	//thread_checkstack(cur);
+
+	/* Interrupts off on this processor */
+        // splhigh();
+	//thread_switch(S_ZOMBIE, NULL);
+	//panic("The zombie walks!\n");
+	
+	
+}
+
+#if OPT_A2
+pid_t
+get_next_pid(void) {
+    return next_pid++;
+}
+#endif

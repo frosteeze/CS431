@@ -87,6 +87,7 @@ kill_curthread(vaddr_t epc, unsigned code, vaddr_t vaddr)
 		break;
 	    case EX_MOD:
 	    case EX_TLBL:
+			//add exception handler here to handle a pagefault 
 	    case EX_TLBS:
 		sig = SIGSEGV;
 		break;

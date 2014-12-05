@@ -35,15 +35,39 @@
  *
  * Note: curproc is defined by <current.h>.
  */
+#include "opt-A2.h"
 
 #include <spinlock.h>
 #include <thread.h> /* required for struct threadarray */
+#include <kern/types.h>
+#include <synch.h>
+#include <wchan.h>
+
+
+//process status codes  
+#define PROCESS_RUNNING 0
+#define PROCESS_WAITING 1
+#define PROCESS_BLOCKED 2
+#define PROCESS_READY 3
+#define PROCESS_SWAPPED_WAITING 3
+#define PROCESS_SWAPPED_BLOCKED 4
+#define PROCESS_TERMINATED 5
+
+//exit codes 
+#define EXIT_SUCCESS 0
+#define EXIT_FAILURE 1
+
 
 struct addrspace;
 struct vnode;
 #ifdef UW
 struct semaphore;
 #endif // UW
+
+struct process_list_entry* process_list_head; // first element of list
+struct process_list_entry* process_list_tail;// last element of the list 
+struct lock* list_lock; // list lock control access to the list 
+
 
 /*
  * Process structure.
@@ -52,10 +76,12 @@ struct proc {
 	char *p_name;			/* Name of this process */
 	struct spinlock p_lock;		/* Lock for this structure */
 	struct threadarray p_threads;	/* Threads in this process */
-
+	struct process_list_entry* list_ptr; 	/*points to the process list */
 	/* VM */
 	struct addrspace *p_addrspace;	/* virtual address space */
-
+#if OPT_A2
+	pid_t p_pid; 			/* Pid for this process*/
+#endif
 	/* VFS */
 	struct vnode *p_cwd;		/* current working directory */
 
@@ -68,8 +94,20 @@ struct proc {
   struct vnode *console;                /* a vnode for the console device */
 #endif
 
-	/* add more material here as needed */
+	struct filetable *p_filetable;
 };
+
+struct process_list_entry {
+  pid_t pid; 				// the pid of the process this entry references
+  pid_t parent_pid; 		// the parent pid of the process this entry references 
+  volatile int status; 				// current status of this process
+  struct proc* process_ptr; // points to the process in this entry references 
+  int exitcode; 			// the exit code for this process
+  struct process_list_entry* next;// points to the next process in the list 
+  struct cv* wait_cv; 		// wait condition for waitpid
+};
+
+
 
 /* This is the process structure for the kernel and for kernel-only threads. */
 extern struct proc *kproc;
@@ -94,11 +132,19 @@ int proc_addthread(struct proc *proc, struct thread *t);
 /* Detach a thread from its process. */
 void proc_remthread(struct thread *t);
 
+void proc_remallthreads(struct proc *p);
+
 /* Fetch the address space of the current process. */
 struct addrspace *curproc_getas(void);
 
 /* Change the address space of the current process, and return the old one. */
 struct addrspace *curproc_setas(struct addrspace *);
 
+void process_exit(void);
 
+#if OPT_A2
+/* Returns the next usable or unassigned pid.*/
+pid_t get_next_pid(void);
+#endif
 #endif /* _PROC_H_ */
+
