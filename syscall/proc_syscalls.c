@@ -16,8 +16,7 @@
 #include <file.h>
 #include <copyinout.h>
 
-  /* this implementation of sys__exit does not do anything with the exit code */
-  /* this needs to be fixed to get exit() and waitpid() working properly */
+
 
 #if OPT_A2
 int sys_fork(struct trapframe *tf, pid_t *retval)
@@ -45,10 +44,12 @@ int sys_fork(struct trapframe *tf, pid_t *retval)
 	}
 	
 
-	int result = as_copy(p->p_addrspace, &child_proc->p_addrspace);/* copy the address space from the 
-	parent to the child process lot of problems can happen here but the most common problem is the os 
-	running out of memory to give to the vm, which causes the vm to not be able to return any pages to 
-	ram_stealmem which causes as_prepare_load not to return an addresspace to as_copy which final fails 
+	int result = as_copy(p->p_addrspace, &child_proc->p_addrspace);
+	/* copy the address space from the parent to the child process lot 
+	of problems can happen here but the most common problem is the os 
+	running out of memory to give to the vm, which causes the vm to not 
+	be able to return any pages to ram_stealmem which causes as_prepare_load 
+	not to return an addressspace to as_copy which final fails 
 	to create or copy the address space from the parent to child in sys_fork here. */
 
 	//KASSERT(child_proc->p_addrspace != NULL);
@@ -91,9 +92,7 @@ int sys_fork(struct trapframe *tf, pid_t *retval)
 
 #endif
 
-
-int
-sys_getpid(pid_t *retval)
+int sys_getpid(pid_t *retval)
 {
 #if OPT_A2
     struct proc *p = curproc;
@@ -104,20 +103,15 @@ sys_getpid(pid_t *retval)
 }
 
 int sys__exit (int exitcode) {
-  struct process_list_entry* temp = curproc->list_ptr;
-  temp->status = PROCESS_TERMINATED;
-  temp->exitcode = exitcode;
-  process_exit();//should be process_exit() still working on this!!!!! 
+  curproc->list_ptr->status = PROCESS_TERMINATED;
+  curproc->list_ptr->exitcode = exitcode;
+  process_exit();
   return 0;
 }
 
-int
-sys_waitpid(pid_t pid,
-	    userptr_t status,
-	    int options,
-	    pid_t *retval)
+int sys_waitpid(pid_t pid, userptr_t status, int options, pid_t *retval)
 {
-  int exitstatus;
+  int exitstatus = 0;
   int result;
   
 	KASSERT(status != NULL);
@@ -125,13 +119,19 @@ sys_waitpid(pid_t pid,
         //misaligned memory address
         return EFAULT;
     }
-  
+	if (options != 0) 
+		return EINVAL;
+		
+  	if (status == NULL) 
+		return EINVAL;
+		
+		
 	struct process_list_entry* child = NULL;
 	child = get_process_entry(pid);
 	
-  	if (child == NULL) return EINVAL;
-  	if (options != 0) return EINVAL;
-  	if (status == NULL) return EINVAL;
+  	if (child == NULL) 
+		return EINVAL;
+  	
 
 	lock_acquire(list_lock);
 	

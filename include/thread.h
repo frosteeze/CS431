@@ -105,6 +105,9 @@ struct thread {
 	 * Public fields
 	 */
 
+	/* add more here as needed */
+
+	//struct filetable *t_filetable;
 };
 
 /*

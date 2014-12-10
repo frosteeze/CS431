@@ -44,6 +44,8 @@
 #define VM_FAULT_WRITE       1    /* A write was attempted */
 #define VM_FAULT_READONLY    2    /* A write to a readonly page was attempted*/
 
+#define MAX_STACK_SIZE 12
+
 
 /* Initialization function */
 void vm_bootstrap(void);
@@ -54,6 +56,15 @@ int vm_fault(int faulttype, vaddr_t faultaddress);
 /* Allocate/free kernel heap pages (called by kmalloc/kfree) */
 vaddr_t alloc_kpages(int npages);
 void free_kpages(vaddr_t addr);
+
+/* TLB management */
+int tlb_get_rr_victim(void);
+void tlb_evict(vaddr_t vaddr);
+void tlb_invalidate(vaddr_t vaddr);
+
+//alise the tlb_probe function 
+#define tlb_find(x) tlb_probe(x, 0)
+
 
 /* TLB shootdown handling called from interprocessor_interrupt */
 void vm_tlbshootdown_all(void);

@@ -128,19 +128,6 @@ load_segment(struct addrspace *as, struct vnode *v,
 	 * diagnostic tool. Note that it must be disabled again before
 	 * you submit your code for grading.
 	 */
-#if 0
-	{
-		size_t fillamt;
-
-		fillamt = memsize - filesize;
-		if (fillamt > 0) {
-			DEBUG(DB_EXEC, "ELF: Zero-filling %lu more bytes\n", 
-			      (unsigned long) fillamt);
-			u.uio_resid += fillamt;
-			result = uiomovezeros(fillamt, &u);
-		}
-	}
-#endif
 	
 	return result;
 }
@@ -247,7 +234,9 @@ load_elf(struct vnode *v, vaddr_t *entrypoint)
 					  ph.p_vaddr, ph.p_memsz,
 					  ph.p_flags & PF_R,
 					  ph.p_flags & PF_W,
-					  ph.p_flags & PF_X);
+					  ph.p_flags & PF_X, 
+					  ph.p_offset, 
+					  ph.p_filesz);
 		if (result) {
 			return result;
 		}

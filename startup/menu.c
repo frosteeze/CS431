@@ -93,16 +93,16 @@ cmd_progthread(void *ptr, unsigned long nargs)
 
 	KASSERT(nargs >= 1);
 
-	/* if (nargs > 2) {
-		kprintf("Warning: argument passing from menu not supported\n");
-	}  Passing arguments is now supported, this is not needed */
+	//if (nargs > 2) {
+	//	kprintf("Warning: argument passing from menu not supported\n");
+	//}
 
 	/* Hope we fit. */
 	KASSERT(strlen(args[0]) < sizeof(progname));
 
 	strcpy(progname, args[0]);
 
-	result = runprogram(progname, args, ((int) nargs));
+	result = runprogram(progname,args,nargs);
 	if (result) {
 		kprintf("Running program %s failed: %s\n", args[0],
 			strerror(result));
@@ -158,21 +158,6 @@ common_prog(int nargs, char **args)
 	P(no_proc_sem);
 #endif // UW
 
-	return 0;
-}
-
-/*
- * Command for enabling DB_THREADS debugging messages.
- */
-
-static
-int
-cmd_dth(int nargs, char **args)
-{
-	(void) nargs;
-	(void) args;
-	dbflags |= 0x0010;
-	kprintf("DB_THREADS messages enabled.\n");
 	return 0;
 }
 
@@ -411,6 +396,16 @@ cmd_kheapstats(int nargs, char **args)
 	return 0;
 }
 
+static
+int
+cmd_dth(int n, char **a)
+{
+	(void)n;
+	(void)a;
+	dbflags |= DB_THREADS;
+	return 0;
+}
+
 ////////////////////////////////////////
 //
 // Menus.
@@ -448,11 +443,11 @@ static const char *opsmenu[] = {
 	"[bootfs]  Set \"boot\" filesystem     ",
 	"[pf]      Print a file              ",
 	"[cd]      Change directory          ",
+	"[dth]     Enables thread debugging  ",
 	"[pwd]     Print current directory   ",
 	"[sync]    Sync filesystems          ",
 	"[panic]   Intentional panic         ",
 	"[q]       Quit and shut down        ",
-	"[dth]	   Enable DB_THREADS debug   ",
 	NULL
 };
 
@@ -558,13 +553,13 @@ static struct {
 	{ "bootfs",	cmd_bootfs },
 	{ "pf",		printfile },
 	{ "cd",		cmd_chdir },
+	{ "dth",	cmd_dth },
 	{ "pwd",	cmd_pwd },
 	{ "sync",	cmd_sync },
 	{ "panic",	cmd_panic },
 	{ "q",		cmd_quit },
 	{ "exit",	cmd_quit },
 	{ "halt",	cmd_quit },
-	{ "dth",	cmd_dth },
 
 #if OPT_SYNCHPROBS
 	/* in-kernel synchronization problem(s) */
@@ -726,4 +721,3 @@ menu(char *args)
 		menu_execute(buf, 0);
 	}
 }
-

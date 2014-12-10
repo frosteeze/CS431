@@ -145,6 +145,29 @@ typedef __socklen_t socklen_t;
 
 #define NULL ((void *)0)
 
+#define DEFFLAGVAR(prefix) int prefix##_flags;
+
+#define DECLFLAGS(sname, prefix, ename) \
+  void prefix##_set_flag(struct sname *, enum ename, bool); \
+  bool prefix##_get_flag(struct sname *, enum ename); \
+  void prefix##_reset_flags(struct sname *);
+
+#define DEFFLAGS(sname, prefix, ename) \
+  void prefix##_set_flag(struct sname * ptr, enum ename fl, bool val) { \
+    if (!val) ptr->prefix##_flags &= ~(1 << (unsigned)fl); \
+    else ptr->prefix##_flags |= (1 << (unsigned)fl);\
+  } \
+    \
+  bool prefix##_get_flag(struct sname * ptr, enum ename fl) { \
+    unsigned offset = (unsigned)fl; \
+    return (ptr->prefix##_flags & (1 << offset)) >> offset; \
+  } \
+    \
+  void prefix##_reset_flags(struct sname * ptr) { \
+    ptr->prefix##_flags = 0; \
+  }
+
+
 /*
  * Boolean.
  */

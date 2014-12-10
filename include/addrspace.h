@@ -34,8 +34,10 @@
  * Address space structure and operations.
  */
 
-
+#include <types.h>
+#include <array.h>
 #include <vm.h>
+#include <pt.h>
 
 struct vnode;
 
@@ -46,15 +48,57 @@ struct vnode;
  *
  * You write this.
  */
+ 
+ /*This enum defines whether this segment or page can be read from, written to or 
+even executed. */
+ enum siflag {r=0,w=1,x=2};
+
+struct seg_info {
+  // the page aligned base and size
+  vaddr_t si_base;
+  size_t si_size; // in number of pages
+
+  // the original base and size
+  vaddr_t si_seg_base;
+  size_t si_seg_size; // in bytes
+
+  off_t si_offset;
+
+  DEFFLAGVAR(si);
+};
+
+DECLFLAGS(seg_info, si, siflag);
+
+bool si_in_segment(struct seg_info * si, vaddr_t vaddr);
+
+#ifndef SIFINLINE
+#define SIFINLINE INLINE
+#endif
+
+DECLARRAY(seg_info);
+DEFARRAY(seg_info, SIFINLINE);
 
 struct addrspace {
-  vaddr_t as_vbase1;
-  paddr_t as_pbase1;
-  size_t as_npages1;
-  vaddr_t as_vbase2;
-  paddr_t as_pbase2;
-  size_t as_npages2;
-  paddr_t as_stackpbase;
+  //vaddr_t as_vbase1;
+  //paddr_t as_pbase1;
+  //size_t as_npages1;
+  //vaddr_t as_vbase2;
+  //paddr_t as_pbase2;
+  //size_t as_npages2;
+  //paddr_t as_stackpbase;
+  
+  /*
+  Pagetable for this addressspace these are initalized on a by process basis so one for each
+  process is needed.
+  */ 
+  struct page_table * as_pt;
+
+  // for storing vbases for each segment so we can load them
+  struct seg_infoarray as_si;
+
+  size_t as_stack_size;
+  
+  
 };
 
 /*
@@ -103,10 +147,29 @@ int               as_define_region(struct addrspace *as,
                                    vaddr_t vaddr, size_t sz,
                                    int readable, 
                                    int writeable,
-                                   int executable);
+                                   int executable,
+				   off_t file_offset, 
+				   size_t filesz);
 int               as_prepare_load(struct addrspace *as);
 int               as_complete_load(struct addrspace *as);
 int               as_define_stack(struct addrspace *as, vaddr_t *initstackptr);
+
+int               as_num_stackpages(struct addrspace * as);
+
+// this assumes that the given page is valid.
+// this also assumes that page has been loaded into the TLB.
+int         	  as_load_page(struct addrspace * as, struct page * pg);
+
+bool              as_is_userptr(struct addrspace * as, vaddr_t vaddr);
+
+// if the page was invalid, it returns true in ret
+struct page*      as_get_page(struct addrspace * as, vaddr_t vaddr, bool * ret);
+
+// call this on a context switch
+void              as_set_prev(void);
+
+//int               as_num_stackpages(void);
+
 
 
 /*

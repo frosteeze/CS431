@@ -101,12 +101,13 @@ boot(void)
 	kprintf("%s", harvard_copyright);
 	kprintf("\n");
 
-	kprintf("Group 7's system version %s (%s #%d)\n", 
+	kprintf("Joseph's system version %s (%s #%d)\n", 
 		GROUP_VERSION, buildconfig, buildversion);
 	kprintf("\n");
 
 	/* Early initialization. */
 	ram_bootstrap();
+	vm_bootstrap();	
 	proc_bootstrap();
 	thread_bootstrap();
 	hardclock_bootstrap();
@@ -205,6 +206,7 @@ sys_reboot(int code)
 void
 kmain(char *arguments)
 {
+	//kprintf("Hello starting OS...\n");
 	boot();
 
 	menu(arguments);
