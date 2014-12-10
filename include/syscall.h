@@ -76,6 +76,8 @@ int sys_waitpid(pid_t pid, userptr_t status, int options, pid_t *retval);
 
 struct process_list_entry* get_process_entry (pid_t pid);
 
+int sys_execv(char *progname, char **args);
+
 #endif // UW
 
 #endif /* _SYSCALL_H_ */
