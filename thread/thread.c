@@ -50,6 +50,7 @@
 #include <addrspace.h>
 #include <mainbus.h>
 #include <vnode.h>
+#include <uw-vmstats.h>
 
 #include "opt-synchprobs.h"
 
@@ -152,7 +153,7 @@ thread_create(const char *name)
 	/* If you add to struct thread, be sure to initialize here */
 
 
-	thread->t_filetable = NULL;
+	//thread->t_filetable = NULL;
 
 	return thread;
 }
@@ -227,6 +228,7 @@ cpu_create(unsigned hardware_number)
 
 	cpu_machdep_init(c);
 
+	vmstats_init();
 	return c;
 }
 
@@ -334,12 +336,8 @@ thread_panic(void)
 void
 thread_shutdown(void)
 {
-	/*
-	 * Stop the other CPUs.
-	 *
-	 * We should probably wait for them to stop and shut them off
-	 * on the system board.
-	 */
+	vmstats_print();
+
 	ipi_broadcast(IPI_OFFLINE);
 }
 
@@ -1210,3 +1208,4 @@ interprocessor_interrupt(void)
 	curcpu->c_ipi_pending = 0;
 	spinlock_release(&curcpu->c_ipi_lock);
 }
+

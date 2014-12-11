@@ -43,10 +43,10 @@
  */
 #include "opt-A2.h"
 
-
 #include <types.h>
 #include <proc.h>
 #include <current.h>
+#include <synch.h>
 #include <addrspace.h>
 #include <vnode.h>
 #include <vfs.h>
@@ -105,7 +105,13 @@ proc_create(const char *name)
 	proc->console = NULL;
 #endif // UW
 #if OPT_A2
-proc->p_pid = get_next_pid();
+proc->p_filetable = NULL;
+proc->p_pid = 0;
+proc->list_ptr = NULL;
+
+
+
+
 #endif
 	return proc;
 }
@@ -187,8 +193,12 @@ proc_destroy(struct proc *proc)
 	}
 	V(proc_count_mutex);
 #endif // UW
+	/*struct process_list_entry *temp = proc->list_ptr;
 	
-
+  if (temp->wait_cv != NULL) {
+    cv_destroy(temp->wait_cv);
+  }*/
+	
 }
 
 /*
@@ -212,6 +222,44 @@ proc_bootstrap(void)
     panic("could not create no_proc_sem semaphore\n");
   }
 #endif // UW 
+
+ if (list_lock == NULL) {
+    list_lock = lock_create("list_lock");
+    if (list_lock == NULL) {
+      panic("process_bootstrap: lock_create failed\n");
+    }
+  }
+
+
+
+//init the process list
+  struct process_list_entry* temp = kmalloc(sizeof(struct process_list_entry));
+  if (temp == NULL) {
+    kfree(temp);
+    panic("process_bootstrap: Out of memory\n");
+  } 
+  
+  temp->wait_cv = cv_create("wait_cv");
+  if (temp->wait_cv == NULL) {
+    kfree(temp);
+    panic("process_bootstrap: create_cv failed\n");
+  }
+  
+  //This is a dummy it should point to the kernel process but doesn't because no one should ever need
+  //access the kernel process pid this way. 
+   temp->pid = 101;
+   temp->parent_pid = 100;
+   temp->status = PROCESS_RUNNING;
+   temp->process_ptr = NULL;
+   temp->exitcode = EXIT_SUCCESS;
+   temp->process_ptr = kproc;
+   temp->next = NULL;	
+   kproc->list_ptr = temp;
+   kproc->p_pid = 101;
+   
+   process_list_head = temp; 
+   process_list_tail = temp;
+
 }
 
 /*
@@ -275,6 +323,31 @@ proc_create_runprogram(const char *name)
 	V(proc_count_mutex);
 #endif // UW
 
+struct process_list_entry* temp = kmalloc(sizeof(struct process_list_entry));
+  if (temp == NULL) {
+    kfree(proc->p_name);
+    kfree(proc);
+    return NULL;;
+  }
+  temp->wait_cv = cv_create("wait_cv");
+  if (temp->wait_cv == NULL) {
+    kfree(temp);
+    kfree(proc->p_name);
+    kfree(proc);
+    return NULL;;
+  }
+  lock_acquire(list_lock);
+  temp->pid = process_list_tail->pid+1;
+  temp->parent_pid = curproc->p_pid;
+  temp->status = PROCESS_RUNNING;
+  temp->exitcode = EXIT_SUCCESS;
+  temp->process_ptr = proc;
+  temp->next = NULL;
+  process_list_tail->next = temp;
+  process_list_tail = process_list_tail->next;
+  proc->list_ptr = temp;
+  proc->p_pid = temp->pid;
+  lock_release(list_lock);
 	return proc;
 }
 
@@ -298,6 +371,8 @@ proc_addthread(struct proc *proc, struct thread *t)
 	t->t_proc = proc;
 	return 0;
 }
+
+
 
 /*
  * Remove a thread from its process. Either the thread or the process
@@ -327,6 +402,27 @@ proc_remthread(struct thread *t)
 	spinlock_release(&proc->p_lock);
 	panic("Thread (%p) has escaped from its process (%p)\n", t, proc);
 }
+
+void
+proc_remallthreads(struct proc *p)
+{
+	struct proc *proc;
+	unsigned i, num;
+
+	proc = p;
+	KASSERT(proc != NULL);
+
+	spinlock_acquire(&proc->p_lock);
+	/* ugh: find the thread in the array */
+	num = threadarray_num(&proc->p_threads);
+	for (i=0; i<num; i++) {
+			threadarray_remove(&proc->p_threads, i);
+			spinlock_release(&proc->p_lock);
+			return;
+	}
+	spinlock_release(&proc->p_lock);
+}
+
 
 /*
  * Fetch the address space of the current process. Caution: it isn't
@@ -368,10 +464,309 @@ curproc_setas(struct addrspace *newas)
 	spinlock_release(&proc->p_lock);
 	return oldas;
 }
+
+void proc_clear(struct proc *proc)
+{
+  proc_cleanup(proc);
+
+  lock_release(proc->list_ptr->p_exit_lock);
+}
+
+void proc_cleanup(struct proc * proc) {
+
+	KASSERT(proc != NULL);
+	KASSERT(proc != kproc);
+
+	/*
+	 * We don't take p_lock in here because we must have the only
+	 * reference to this structure. (Otherwise it would be
+	 * incorrect to destroy it.)
+	 */
+
+	/* VFS fields */
+	if (proc->p_cwd) {
+		VOP_DECREF(proc->p_cwd);
+		proc->p_cwd = NULL;
+	}
+
+	/* VM fields */
+	if (proc->p_addrspace) {
+		/*
+		 * In case p is the currently running process (which
+		 * it might be in some circumstances, or if this code
+		 * gets moved into exit as suggested above), clear
+		 * p_addrspace before calling as_destroy. Otherwise if
+		 * as_destroy sleeps (which is quite possible) when we
+		 * come back we'll be calling as_activate on a
+		 * half-destroyed address space. This tends to be
+		 * messily fatal.
+		 */
+		struct addrspace *as;
+
+		as_deactivate();
+		as = curproc_setas(NULL);
+		as_destroy(as);
+	}
+
+
+  if (proc->p_prog != NULL) {
+    vfs_close(proc->p_prog);
+    proc->p_prog = NULL;
+  }
+
+}
+
+void process_exit()
+{
+	// parent process has not exited
+  lock_acquire(curproc->list_ptr->p_exit_lock);
+  
+  
+  //assure that the parent of this porcess has not exited   
+  if (!curproc->list_ptr->p_parent_exited) {
+    //curproc->list_ptr->exitcode = 
+    cv_broadcast(curproc->list_ptr->p_exit_cv, curproc->list_ptr->p_exit_lock);
+    proc_signal_children(curproc);
+    proc_clear(curproc);
+  }
+  // parent process has already exited
+  else {
+    proc_signal_children(curproc);
+    lock_release(curproc->list_ptr->p_exit_lock);
+    proc_destroy(curproc);
+  }
+
+  // exit kernel thread
+  thread_exit();
+
+  // Something went wrong very very wrong!!!!!!
+  panic("process_exit: couldn't exit process\n");
+	
+	
+}
+
+void proc_signal_children(struct proc* proc)
+{	
+	lock_acquire(proc->p_children_lock);
+	struct proc * child  = get_child_proc(proc);
+    
+    lock_acquire(child->list_ptr->p_exit_lock);
+    if (child->list_ptr->p_parent_exited) {
+      lock_release(child->list_ptr->p_exit_lock);
+      proc_destroy(child);
+    } else {
+      child->list_ptr->p_parent_exited = true;
+      lock_release(child->list_ptr->p_exit_lock);
+    }
+  
+
+  lock_release(proc->p_children_lock);
+}
+
+
+struct proc * get_child_proc(struct proc * proc) {
+  if (proc == NULL) {
+    return NULL;
+  }
+
+  lock_acquire(proc->p_children_lock);
+
+  if(proc->list_ptr->next){
+		return proc->list_ptr->next->process_ptr;
+		}
+		
+  lock_release(proc->p_children_lock);
+
+  return NULL;
+}
+
+//not done! not done! not done! not done! not done! not done! not done! not done! 
+//static void process_switch(struct proc processToSwitch ,int newstate, struct wchan *wc)
+//{
+/*
+1. Change protection domain (user to supervisor[kernel]).
+2. Change stacks: switch from using the user-level stack to
+using a kernel stack.
+3. Save execution state (on kernel’s stack).
+4. Do kernel stuff
+5. Kernel thread switch
+6. Restore user-level execution state
+7. Change protection domain (from supervisor[kernel] to user) 
+*/
+//	struct proc *cur, *next;
+//	int spl;
+//
+//	DEBUGASSERT(curcpu->c_curthread == curthread);
+//	DEBUGASSERT(curthread->t_cpu == curcpu->c_self);
+//
+//	/* Explicitly disable interrupts on this processor */
+//	spl = splhigh();
+//
+//	cur = curproc;
+//
+//	/*
+//	 * If we're idle, return without doing anything. This happens
+//	 * when the timer interrupt interrupts the idle loop.
+//	 */
+//	if (curcpu->c_isidle) {
+//		splx(spl);
+//		return;
+//	}//
+//
+//	/* Check the stack guard band. */
+//	thread_checkstack(cur);
+//
+//	/* Lock the run queue. */
+//	spinlock_acquire(&curcpu->c_runqueue_lock);
+//
+//	/* Micro-optimization: if nothing to do, just return */
+//	if (newstate == S_READY && threadlist_isempty(&curcpu->c_runqueue)) {
+//		spinlock_release(&curcpu->c_runqueue_lock);
+//		splx(spl);
+//		return;
+//	}
+//
+//	/* Put the thread in the right place. */
+//	switch (newstate) {
+//	    case S_RUN:
+//		panic("Illegal S_RUN in thread_switch\n");//
+//	    case S_READY://
+//		thread_make_runnable(cur, true /*have lock*/);
+//		break;
+//	    case S_SLEEP:
+//		cur->t_wchan_name = wc->wc_name;
+		/*
+		 * Add the thread to the list in the wait channel, and
+		 * unlock same. To avoid a race with someone else
+		 * calling wchan_wake*, we must keep the wchan locked
+		 * from the point the caller of wchan_sleep locked it
+		 * until the thread is on the list.
+		 *
+		 * (We could for symmetry relock the channel before
+		 * returning from wchan_sleep, but we don't, for two
+		 * reasons. One is that the caller is unlikely to need
+		 * or want it locked and if it does can lock it itself
+		 * without racing. Exercise: what's the other?)
+		 */
+//		threadlist_addtail(&wc->wc_threads, cur);
+//		wchan_unlock(wc);
+//		break;
+//	    case S_ZOMBIE:
+//		cur->t_wchan_name = "ZOMBIE";
+//		threadlist_addtail(&curcpu->c_zombies, cur);//
+//		break;
+//	}
+//	cur->t_state = newstate;
+
+	/*
+	 * Get the next thread. While there isn't one, call md_idle().
+	 * curcpu->c_isidle must be true when md_idle is
+	 * called. Unlock the runqueue while idling too, to make sure
+	 * things can be added to it.
+	 *
+	 * Note that we don't need to unlock the runqueue atomically
+	 * with idling; becoming unidle requires receiving an
+	 * interrupt (either a hardware interrupt or an interprocessor
+	 * interrupt from another cpu posting a wakeup) and idling
+	 * *is* atomic with respect to re-enabling interrupts.
+	 *
+	 * Note that c_isidle becomes true briefly even if we don't go
+	 * idle. However, because one is supposed to hold the runqueue
+	 * lock to look at it, this should not be visible or matter.
+	 */
+
+	/* The current cpu is now idle. */
+//	curcpu->c_isidle = true;
+//	do {
+//		next = threadlist_remhead(&curcpu->c_runqueue);
+//		if (next == NULL) {
+//			spinlock_release(&curcpu->c_runqueue_lock);
+//			cpu_idle();
+//			spinlock_acquire(&curcpu->c_runqueue_lock);
+//		}
+//	} while (next == NULL);
+//	curcpu->c_isidle = false;
+
+	/*
+	 * Note that curcpu->c_curthread may be the same variable as
+	 * curthread and it may not be, depending on how curthread and
+	 * curcpu are defined by the MD code. We'll assign both and
+	 * assume the compiler will optimize one away if they're the
+	 * same.
+	 */
+//	curcpu->c_curthread = next;
+//	curthread = next;
+
+	/* do the switch (in assembler in switch.S) */
+//	switchframe_switch(&cur->t_context, &next->t_context);
+
+	/*
+	 * When we get to this point we are either running in the next
+	 * thread, or have come back to the same thread again,
+	 * depending on how you look at it. That is,
+	 * switchframe_switch returns immediately in another thread
+	 * context, which in general will be executing here with a
+	 * different stack and different values in the local
+	 * variables. (Although new threads go to thread_startup
+	 * instead.) But, later on when the processor, or some
+	 * processor, comes back to the previous thread, it's also
+	 * executing here with the *same* value in the local
+	 * variables.
+	 *
+	 * The upshot, however, is as follows:
+	 *
+	 *    - The thread now currently running is "cur", not "next",
+	 *      because when we return from switchrame_switch on the
+	 *      same stack, we're back to the thread that
+	 *      switchframe_switch call switched away from, which is
+	 *      "cur".
+	 *
+	 *    - "cur" is _not_ the thread that just *called*
+	 *      switchframe_switch.
+	 *
+	 *    - If newstate is S_ZOMB we never get back here in that
+	 *      context at all.
+	 *
+	 *    - If the thread just chosen to run ("next") was a new
+	 *      thread, we don't get to this code again until
+	 *      *another* context switch happens, because when new
+	 *      threads return from switchframe_switch they teleport
+	 *      to thread_startup.
+	 *
+	 *    - At this point the thread whose stack we're now on may
+	 *      have been migrated to another cpu since it last ran.
+	 *
+	 * The above is inherently confusing and will probably take a
+	 * while to get used to.
+	 *
+	 * However, the important part is that code placed here, after
+	 * the call to switchframe_switch, does not necessarily run on
+	 * every context switch. Thus any such code must be either
+	 * skippable on some switches or also called from
+	 * thread_startup.
+	 */
+
+
+	/* Clear the wait channel and set the thread state. */
+//	cur->t_wchan_name = NULL;
+//	cur->t_state = S_RUN;
+
+	/* Unlock the run queue. */
+//	spinlock_release(&curcpu->c_runqueue_lock);
+
+//	/* Activate our address space in the MMU. */
+//	as_activate();
+//
+	/* Clean up dead threads. */
+//	exorcise();
+
+	/* Turn interrupts back on. */
+//	splx(spl);
+//}
+
 #if OPT_A2
 pid_t
 get_next_pid(void) {
     return next_pid++;
 }
 #endif
-

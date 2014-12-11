@@ -37,7 +37,9 @@
 #include <mips/trapframe.h>
 #include <thread.h>
 #include <current.h>
+#include <file.h>
 #include <syscall.h>
+
 
 /*
  * System call dispatcher.
@@ -111,11 +113,10 @@ syscall(struct trapframe *tf)
 				 (userptr_t)tf->tf_a1);
 		break;
 #ifdef UW
-#if OPT_A2
 	case SYS_write:
 	  err = sys_write((int)tf->tf_a0,
 			  (userptr_t)tf->tf_a1,
-			  tf->tf_a2,
+			  (int)tf->tf_a2,
 			  (int *)(&retval));
 	  break;
 	case SYS__exit:
@@ -133,10 +134,8 @@ syscall(struct trapframe *tf)
 			    (pid_t *)&retval);
 	  break;
 #endif // UW
-  
-	case SYS_fork:
-      	  err = sys_fork(tf, (pid_t *)&retval);
-          break;
+
+	#if OPT_A2
 
 	case SYS_open:
 		err = sys_open((userptr_t)tf->tf_a0, tf->tf_a1, tf->tf_a2, 
@@ -150,7 +149,11 @@ syscall(struct trapframe *tf)
                 err = sys_read(tf->tf_a0, (userptr_t)tf->tf_a1, tf->tf_a2,
                                &retval);
                 break;
-#endif //OPTA2
+	   
+	case SYS_fork:
+      	  err = sys_fork(tf, (pid_t *)&retval);
+          break;
+ 	#endif
 	default:
 	  kprintf("Unknown syscall %d\n", callno);
 	  err = ENOSYS;
@@ -190,32 +193,25 @@ syscall(struct trapframe *tf)
  * Enter user mode for a newly forked process.
  */
 void
-enter_forked_process(struct trapframe *tf , unsigned long data2)
+enter_forked_process(struct trapframe *tf, unsigned long data2)
 {
-	int s;
-	s = splhigh();
-	struct trapframe childTrapFrame;
-	struct filetable ft;
+    int s;
+    s = splhigh();
+    struct trapframe childTrapFrame;
+    (void)data2;
 
     bzero(&childTrapFrame, sizeof(struct trapframe));
     memcpy(&childTrapFrame, tf,  sizeof(struct trapframe));
-	//(void)data2;
-    bzero(&ft, sizeof(struct filetable));			
-    memcpy(&ft, (struct filetable*)data2, sizeof(struct filetable));
 	
-	curthread->t_filetable = &ft;
-	//kprintf("Handling filetable now!!!!!\n");	
-     //ft = *(struct filetable*)data2;
-	
-    //curthread->t_filetable = &ft;
     kfree(tf);
+	//mod the trapframe 
     childTrapFrame.tf_v0 = 0; 	   /* return value */
     childTrapFrame.tf_a3 = 0;      /* signal no error */
     childTrapFrame.tf_epc += 4;    /* advance program counter */
 
     //kprintf("I got to enter mips usermode\n");
-    //mips_usermode(tf);
-    splx(s);
+    
     mips_usermode(&childTrapFrame);
+    splx(s);
 }
 #endif

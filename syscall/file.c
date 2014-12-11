@@ -7,6 +7,7 @@
 #include <file.h>
 #include <syscall.h>
 #include <lib.h>
+#include <proc.h>
 #include <vfs.h>
 #include <current.h>
 #include <spinlock.h>
@@ -25,7 +26,7 @@ file_open(char *filename, int flags, int mode, int *retfd)
     
     //Find empty entry in the filetable
     int fd;
-    struct filetable *filetable = curthread->t_filetable;
+    struct filetable* filetable = curproc->p_filetable;
     
 	spinlock_acquire(&filetable->filetable_spinlock);
     for (fd = 0; fd < __OPEN_MAX; fd++) {
@@ -65,7 +66,7 @@ file_open(char *filename, int flags, int mode, int *retfd)
 int
 file_close(int fd)
 {    
-    struct filetable *filetable = curthread->t_filetable;
+    struct filetable *filetable = (struct filetable *)curproc->p_filetable;
     spinlock_acquire(&filetable->filetable_spinlock);
     
     //Check if the file descriptor is valid
@@ -118,9 +119,10 @@ filetable_init(void)
     
 	spinlock_init(&filetable->filetable_spinlock);
     
-    //Update the thread's filetable or else TLB miss will occur
-    curthread->t_filetable = filetable;
+    //Update the process's filetable or else TLB miss will occur
+    curproc->p_filetable = filetable;
     
     return 0;
 }	
 #endif
+

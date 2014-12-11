@@ -38,7 +38,7 @@ sys_write(int fd,userptr_t buf,size_t len,int *retval)
 	int offset = 0;
 
 	//Check the filetable if it exists
-	struct filetable *filetable = curthread->t_filetable;
+	struct filetable *filetable = curproc->p_filetable;
 	spinlock_acquire(&filetable->filetable_spinlock);
 
 	//Checks if the file is valid or has write permission
@@ -103,7 +103,7 @@ sys_read(int fd, userptr_t buf, size_t size, int *retval)
 	int offset = 0;
 
     //Check if the filetable exists
-    struct filetable *filetable = curthread->t_filetable;
+    struct filetable *filetable = curproc->p_filetable;
     spinlock_acquire(&filetable->filetable_spinlock);
     
     //Check if the fd is valid and if the file can be read or not
@@ -140,3 +140,4 @@ sys_close(int fd)
 	return file_close(fd);
 }
 #endif
+

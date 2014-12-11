@@ -150,9 +150,9 @@ thread_create(const char *name)
 	thread->t_iplhigh_count = 1; /* corresponding to t_curspl */
 
 	/* If you add to struct thread, be sure to initialize here */
-	thread->t_addrspace = NULL;
 
-	thread->t_filetable = NULL;
+
+	//thread->t_filetable = NULL;
 
 	return thread;
 }
@@ -250,7 +250,6 @@ thread_destroy(struct thread *thread)
 	 * either here or in thread_exit(). (And not both...)
 	 */
 
-	KASSERT(thread->t_addrspace == NULL);
 	/* Thread subsystem fields */
 	KASSERT(thread->t_proc == NULL);
 	if (thread->t_stack != NULL) {
@@ -527,15 +526,6 @@ thread_fork(const char *name,
 	 * (see notes at bottom of thread_switch), we need to account
 	 * for the spllower() that will be done releasing it.
 	 */
-	if (curthread->t_addrspace != NULL) {
-		result = as_copy(curthread->t_addrspace, &newthread->t_addrspace);
-		if (result) {
- 			pid_unalloc(newthread->t_pid); 
-			thread_destroy(newthread);
- 			return ENOMEM;
-		}
-	}
-
 	newthread->t_iplhigh_count++;
 
 	/* Set up the switchframe so entrypoint() gets called */
@@ -722,9 +712,7 @@ thread_switch(threadstate_t newstate, struct wchan *wc)
 	spinlock_release(&curcpu->c_runqueue_lock);
 
 	/* Activate our address space in the MMU. */
-	if (cur->t_addrspace != NULL) {
-		as_activate(cur->t_addrspace);
-	}
+	as_activate();
 
 	/* Clean up dead threads. */
 	exorcise();
@@ -757,9 +745,7 @@ thread_startup(void (*entrypoint)(void *data1, unsigned long data2),
 	spinlock_release(&curcpu->c_runqueue_lock);
 
 	/* Activate our address space in the MMU. */
-if (cur->t_addrspace != NULL) {
-		as_activate(cur->t_addrspace);
-	}
+	as_activate();
 
 	/* Clean up dead threads. */
 	exorcise();
@@ -1224,3 +1210,4 @@ interprocessor_interrupt(void)
 	curcpu->c_ipi_pending = 0;
 	spinlock_release(&curcpu->c_ipi_lock);
 }
+
