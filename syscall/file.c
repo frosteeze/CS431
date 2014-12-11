@@ -11,9 +11,9 @@
 #include <vfs.h>
 #include <current.h>
 #include <spinlock.h>
-#include "opt-A2.h"
+#include "opt-A3.h"
 
-#if OPT_A2
+#if OPT_A3
 int
 file_open(char *filename, int flags, int mode, int *retfd)
 {

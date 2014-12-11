@@ -22,7 +22,18 @@ getppages(unsigned long npages)
   return coremap_alloc_kframes(npages);
 }
 
-// initialize vm, coremap etc.
+//round robin tlb code 
+int
+tlb_get_rr_victim()
+{
+    int victim;
+    static unsigned int next_victim = 0;
+    victim = next_victim;
+    next_victim = (next_victim + 1) % NUM_TLB;
+    return victim;
+}
+
+// initialize vm, coremap do this in the main with other bootstrap stuff
 void
 vm_bootstrap(void)
 {
@@ -41,6 +52,7 @@ alloc_kpages(int npages)
   return PADDR_TO_KVADDR(pa);
 }
 
+//free up memory when you are done using it 
 void 
 free_kpages(vaddr_t addr)
 {
@@ -49,16 +61,7 @@ free_kpages(vaddr_t addr)
   coremap_free_kframes(pa);
 }
 
-int
-tlb_get_rr_victim()
-{
-    int victim;
-    static unsigned int next_victim = 0;
-    victim = next_victim;
-    next_victim = (next_victim + 1) % NUM_TLB;
-    return victim;
-}
-
+/*Junk that doesn't do anything because we don't know what it was suppose to do */
 void
 vm_tlbshootdown_all(void)
 {
@@ -72,6 +75,7 @@ vm_tlbshootdown(const struct tlbshootdown *ts)
     panic("Not implemented yet.\n");
 }
 
+/*handle a tlb miss both the hard misses and the soft misses */
 int
 vm_fault(int faulttype, vaddr_t faultaddress) {
   vaddr_t stackbase, stacktop;
@@ -123,8 +127,6 @@ vm_fault(int faulttype, vaddr_t faultaddress) {
   stackbase = USERSTACK - as_num_stackpages(as) * PAGE_SIZE;
   stacktop = USERSTACK;
 
-  // keep track of whether the address is in 
-  // the application's text segment
   bool is_text_segment = false;
   bool in_segment = false;
   bool in_stack = false;
@@ -147,17 +149,16 @@ vm_fault(int faulttype, vaddr_t faultaddress) {
     return EFAULT;
   }
 
-  // get a page (with paddr set)
-  // this shouldn't fail unless we run out of memory
+  
   bool needs_load = false;
   struct page * pg = as_get_page(as, faultaddress, &needs_load);
   if (pg == NULL) {
     return ENOMEM;
   }
-
-  // if the page is already actually valid, then we have to mark
-  // used/modified bits.
   spl = splhigh();
+  
+  
+  
   int idx = tlb_find(pg->pg_vaddr);
   if (idx >= 0) {
     uint32_t ehi, elo;
@@ -168,10 +169,8 @@ vm_fault(int faulttype, vaddr_t faultaddress) {
         return EFAULT;
       }
 
-      // if we get here, then we're actually a writeable page
       coremap_set_modified(pg->pg_paddr);
       pg_set_flag(pg, swap, true);
-      // we can write now.
       elo |= TLBLO_DIRTY;
     }
 
@@ -199,14 +198,12 @@ vm_fault(int faulttype, vaddr_t faultaddress) {
 
   paddr = pg->pg_paddr;
 
-  // if we get here, we actually have a TLB miss
   vmstats_inc(VMSTAT_TLB_FAULT);
 
-  /* make sure it's page-aligned */
   KASSERT((paddr & PAGE_FRAME) == paddr);
   KASSERT(paddr != 0);
 
-  /* Disable interrupts on this CPU while frobbing the TLB. */
+  /* Disable interrupts  */
   spl = splhigh();
 
   bool found_space = false;
@@ -218,33 +215,28 @@ vm_fault(int faulttype, vaddr_t faultaddress) {
       }
       ehi = faultaddress;
       
-      // for now, we allow read-only segments to be dirtyable
-      // so that we can load to is in as_load_page
       elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
 
       tlb_write(ehi, elo, i);
       found_space = true;
       idx = i;
 
-      // update vm stat: TLB Fault with Free
       vmstats_inc(VMSTAT_TLB_FAULT_FREE);
 
       break;
   }
 
-  // Ran out of TLB entries; evict a TLB entry to make room for the new entry
+  // Ran out space in the TLB, remove an entry for a  new entry
   if (!found_space) {
     int victim = tlb_get_rr_victim();
     ehi = faultaddress;
     idx = victim;
     
-    // for now, we allow read-only segments to be dirtyable
-    // so that we can load to is in as_load_page
+
     elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
     
     tlb_write(ehi, elo, victim);
 
-    // update vm stat: TLB Fault with Replace
     vmstats_inc(VMSTAT_TLB_FAULT_REPLACE);
   }
   splx(spl);
@@ -256,13 +248,10 @@ vm_fault(int faulttype, vaddr_t faultaddress) {
     }
   }
   else {
-    // already in memory
     vmstats_inc(VMSTAT_TLB_RELOAD);
   }
 
-  // we set the TLB entry to contain the page's vaddr and paddr, but
-  // invalid and read-only so that we get TLB-miss and READ-ONLY FAULTs to
-  // keep track of the used and modified bits.
+
   spl = splhigh();
   ehi = faultaddress;
   elo = paddr;

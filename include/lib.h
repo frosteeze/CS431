@@ -188,7 +188,9 @@ void kprintf_bootstrap(void);
 /*
  * Other miscellaneous stuff
  */
-
+ 
+#define MIN(a,b) (a < b ? a : b)
+#define MAXF(a,b) (a < b ? b : a)
 #define DIVROUNDUP(a,b) (((a)+(b)-1)/(b))
 #define ROUNDUP(a,b)    (DIVROUNDUP(a,b)*b)
 

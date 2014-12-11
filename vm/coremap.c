@@ -66,7 +66,7 @@ void coremap_init(void)
 
   avail_frames = mem_frames - coremapframes;
   
-  // replacement algo will increment it to 0 for first check
+  // replacement algorithm will increment it to 0 for first check
   next_victim = 0;
 }
 
@@ -368,4 +368,5 @@ void coremap_zero_frame(paddr_t paddr)
   coremap[frame].fm_state = FRAME_FREE;
   coremap[frame].fm_modified = false;
 }
+#endif
 #endif

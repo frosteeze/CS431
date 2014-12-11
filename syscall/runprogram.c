@@ -46,9 +46,9 @@
 #include <test.h>
 #include <file.h>
 #include <copyinout.h>
-#include "opt-A2.h"
+#include "opt-A3.h"
 
-#if OPT_A2
+#if OPT_A3
 /*
  * Load program "progname" and start running it in usermode.
  * Does not return except on error.
@@ -92,7 +92,7 @@ runprogram(char *progname, char** args, unsigned long nargs)
 	}
 
 	/* Done with the file now. */
-	vfs_close(v);
+	//vfs_close(v);
 
 	/* Define the user stack in the address space */
 	result = as_define_stack(as, &stackptr);

@@ -38,6 +38,7 @@
 #include <array.h>
 #include <vm.h>
 #include <pt.h>
+#include "opt-A3.h"
 
 struct vnode;
 
@@ -51,23 +52,23 @@ struct vnode;
  
  /*This enum defines whether this segment or page can be read from, written to or 
 even executed. */
- enum siflag {r=0,w=1,x=2};
+ enum psiflag {r=0,w=1,x=2};
 
-struct seg_info {
+struct page_seg_info {
   // the page aligned base and size
-  vaddr_t si_base;
-  size_t si_size; // in number of pages
+  vaddr_t psi_base;
+  size_t psi_size; // in number of pages
 
   // the original base and size
-  vaddr_t si_seg_base;
-  size_t si_seg_size; // in bytes
+  vaddr_t psi_seg_base;
+  size_t psi_seg_size; // in bytes
 
-  off_t si_offset;
+  off_t psi_offset;
 
-  DEFFLAGVAR(si);
+  DEFFLAGVAR(psi);
 };
 
-DECLFLAGS(seg_info, si, siflag);
+DECLFLAGS(page_seg_info, psi, psiflag);
 
 bool si_in_segment(struct seg_info * si, vaddr_t vaddr);
 
@@ -75,8 +76,8 @@ bool si_in_segment(struct seg_info * si, vaddr_t vaddr);
 #define SIFINLINE INLINE
 #endif
 
-DECLARRAY(seg_info);
-DEFARRAY(seg_info, SIFINLINE);
+DECLARRAY(page_seg_info);
+DEFARRAY(page_seg_info, SIFINLINE);
 
 struct addrspace {
   //vaddr_t as_vbase1;
@@ -94,7 +95,7 @@ struct addrspace {
   struct page_table * as_pt;
 
   // for storing vbases for each segment so we can load them
-  struct seg_infoarray as_si;
+  struct page_seg_infoarray as_psi;
 
   size_t as_stack_size;
   
@@ -181,5 +182,5 @@ void              as_set_prev(void);
 
 int load_elf(struct vnode *v, vaddr_t *entrypoint);
 
-
+#endif
 #endif /* _ADDRSPACE_H_ */

@@ -41,7 +41,7 @@
  * Unless you're implementing multithreaded user processes, the only
  * process that will have more than one thread is the kernel process.
  */
-#include "opt-A2.h"
+#include "opt-A3.h"
 
 #include <types.h>
 #include <proc.h>
@@ -491,23 +491,12 @@ void proc_cleanup(struct proc * proc) {
 
 	/* VM fields */
 	if (proc->p_addrspace) {
-		/*
-		 * In case p is the currently running process (which
-		 * it might be in some circumstances, or if this code
-		 * gets moved into exit as suggested above), clear
-		 * p_addrspace before calling as_destroy. Otherwise if
-		 * as_destroy sleeps (which is quite possible) when we
-		 * come back we'll be calling as_activate on a
-		 * half-destroyed address space. This tends to be
-		 * messily fatal.
-		 */
 		struct addrspace *as;
 
 		as_deactivate();
 		as = curproc_setas(NULL);
 		as_destroy(as);
 	}
-
 
   if (proc->p_prog != NULL) {
     vfs_close(proc->p_prog);
@@ -764,7 +753,7 @@ using a kernel stack.
 //	splx(spl);
 //}
 
-#if OPT_A2
+#if OPT_A3
 pid_t
 get_next_pid(void) {
     return next_pid++;

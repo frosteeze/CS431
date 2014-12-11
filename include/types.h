@@ -81,6 +81,7 @@
 
 /* Get machine-dependent types not visible to userland. */
 #include <machine/types.h>
+#include "opt-A3.h"
 
 /*
  * Define userptr_t as a pointer to a one-byte struct, so it won't mix
@@ -145,6 +146,10 @@ typedef __socklen_t socklen_t;
 
 #define NULL ((void *)0)
 
+/*
+	Defines a method of setting flags inside pages using enumerated types. this technique 
+	uses macro     
+*/
 #define DEFFLAGVAR(prefix) int prefix##_flags;
 
 #define DECLFLAGS(sname, prefix, ename) \
@@ -167,6 +172,7 @@ typedef __socklen_t socklen_t;
     ptr->prefix##_flags = 0; \
   }
 
+     
 
 /*
  * Boolean.

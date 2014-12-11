@@ -39,6 +39,7 @@
 #include <array.h>
 #include <spinlock.h>
 #include <threadlist.h>
+#include "opt-A3.h"
 
 struct cpu;
 

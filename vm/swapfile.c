@@ -1,125 +1,134 @@
 #include <types.h>
-#include <kern/errno.h>
-#include <kern/fcntl.h>
-#include <lib.h>
-#include <spinlock.h>
-#include <uio.h>
-#include <vfs.h>
-#include <vnode.h>
-#include <vm.h>
 #include <pt.h>
 #include <swapfile.h>
 #include <current.h>
+#include <lib.h>
+#include <vnode.h>
+#include <spinlock.h>
+#include <uio.h>
+#include <vfs.h>
+#include <kern/errno.h>
+#include <kern/fcntl.h>
+#include <vm.h>
 #include <proc.h>
 #include <uw-vmstats.h>
 #include "opt-A3.h"
 
 #if OPT_A3
 
-#define SWAPFILE_FRAMES (SWAPFILE_SIZE / PAGE_SIZE)
-const char * sf_name = "/swapfile";
-
-struct ilist {
-  int vals[SWAPFILE_FRAMES];
+#define SWAPFILE_FRAMES (SWAPFILE_SIZE / PAGE_SIZE) // default 9MB / 4KB = 2250KB or 2.50MB
+const char * swapf_name = "/swapfile"; //file name for the swapfile 
+/*At the time we wrote this code we hadn't seen the queue file build in the O.S. so we
+made one which is less generic and only used for swapfile  */
+struct queue {
+  int vals[SWAPFILE_FRAMES]; // 
   volatile int ptr;
 };
-
-static struct ilist * ilist_create(void) {
-  struct ilist * il = kmalloc(sizeof(struct ilist));
-
-  bzero(il, sizeof(struct ilist));
-
-  il->ptr = 0;
-
-  return il;
+/*inits the queue for the swapfile allow the queue to be use.*/
+static struct queue* queue_create(void) {
+  struct queue * qu = kmalloc(sizeof(struct queue));
+  bzero(qu, sizeof(struct queue));
+  qu->ptr = 0;
+  return qu;
 }
 
-static bool il_empty(struct ilist * il) {
-  return il->ptr <= 0;
-}
 
-static void il_push(int val, struct ilist * il) {
-  if (il->ptr >= SWAPFILE_FRAMES) {
+/*push a value on to the queue */
+static void qu_push(int val, struct queue * qu) {
+  if (qu->ptr >= SWAPFILE_FRAMES) {
     panic("Swapfile full");
   }
-
-  il->vals[il->ptr] = val;
-  il->ptr++;
+  qu->vals[qu->ptr] = val;
+  qu->ptr++;
 }
 
-static int il_pop(struct ilist * il) {
-  if (il == NULL) {
+/*pop the queue for the value in the queue*/
+static int qu_pop(struct queue * qu) {
+  if (qu == NULL) {
     return 0;
   }
+  
+/* checks if the queue is empty */
+static bool qu_empty(struct queue * qu) {
+  return qu->ptr <= 0;
+}
+  KASSERT(!qu_empty(qu));
 
-  KASSERT(!il_empty(il));
-
-  il->ptr--;
-  int val = il->vals[il->ptr];
+  qu->ptr--;
+  int val = qu->vals[qu->ptr];
 
   return val;
 }
 
+/*Holds the pages swapped out of memory by the pagetable/vm this struct hold the
+ must hold the vnode to the file system where the swapfile data in stored, must have 
+ the page queue so storing and re 
+*/
 struct swapfile {
-  struct vnode * sf_vn;
-
-  struct ilist * sf_fl;
-
-  volatile unsigned int sf_next_frame;
-
-  struct spinlock sf_lock;
-  struct lock * sf_vnlock;
+  struct vnode* swapf_vn; // vnode to the   
+  struct queue* swapf_fl; // queue for the swapfile 
+  volatile unsigned int swapf_next_frame;
+  struct spinlock swapf_lock; //controls internal access to parts of the swap file  
+  struct lock* swapf_vnlock; // controls access to the swapfile 
 };
 
-struct swapfile sf;
+struct swapfile swapf; //should be a singleton not sure how to implement this in c code
 
+
+/*The swapfile initialization function creates the internal parts of the swapfile 
+ */
 void swapfile_bootstrap(void) {
-  bzero(&sf, sizeof(struct swapfile));
+  bzero(&swapf, sizeof(struct swapfile));
 
-  char file[100];
-  strcpy(file, sf_name);
+  char file[100]; //buffer
+  strcpy(file, swapf_name);
 
-  int result = vfs_open(file, O_RDWR | O_CREAT | O_TRUNC, 0664, &sf.sf_vn);
+  int result = vfs_open(file, O_RDWR | O_CREAT | O_TRUNC, 0664, &swapf.swapf_vn);
   if (result) {
     panic ("failed to initialize swapfile!\n");
   }
 
-  spinlock_init(&sf.sf_lock);
-  sf.sf_vnlock = lock_create("swapfile lock");
+  spinlock_init(&swapf.swapf_lock);
+  swapf.swapf_vnlock = lock_create("swapfile lock");
 
-  sf.sf_fl = ilist_create();
+  swapf.swapf_fl = queue_create();
 }
 
-static int swapfile_get_next(struct page * pg) {
+
+/*Get the index of file */
+static int swapfile_get_next(struct page* pg) {
   int idx;
-  spinlock_acquire(&sf.sf_lock);
-  if (!il_empty(sf.sf_fl)) {
-    idx = il_pop(sf.sf_fl);
+  
+  spinlock_acquire(&swapf.swapf_lock);
+  if (!qu_empty(swapf.swapf_fl)) {
+    idx = qu_pop(swapf.swapf_fl);
     pg->pg_offset = idx;
-    spinlock_release(&sf.sf_lock);
+    spinlock_release(&swapf.swapf_lock);
     return idx;
   }
 
-  if (sf.sf_next_frame < SWAPFILE_FRAMES) {
-    idx = sf.sf_next_frame;
-    sf.sf_next_frame++;
+  if (swapf.swapf_next_frame < SWAPFILE_FRAMES) {
+    idx = swapf.swapf_next_frame;
+    swapf.swapf_next_frame++;
     pg->pg_offset = idx;
-    spinlock_release(&sf.sf_lock);
+    spinlock_release(&swapf.swapf_lock);
     return idx;
   }
 
-  spinlock_release(&sf.sf_lock);
+  spinlock_release(&swapf.swapf_lock);
   return -1;
 }
-
-static void swapfile_return(int idx, struct page * pg) {
-  spinlock_acquire(&sf.sf_lock);
-  il_push(idx, sf.sf_fl);
+/*returns the page in the queue  */
+static void swapfile_return(int idx, struct page* pg) {
+  spinlock_acquire(&swapf.swapf_lock);
+  qu_push(idx, swapf.swapf_fl);
   pg->pg_offset = -1;
-  spinlock_release(&sf.sf_lock);
+  spinlock_release(&swapf.swapf_lock);
 }
 
-int swapfile_write_page(struct page * pg) {
+
+/*writes a page down to the swapfile.   */
+int swapfile_write_page(struct page* pg) {
   KASSERT(pg->pg_offset < 0);
 
   int idx;
@@ -136,7 +145,7 @@ int swapfile_write_page(struct page * pg) {
 
   KASSERT(pg->pg_paddr != 0);
 
-  lock_acquire(sf.sf_vnlock);
+  lock_acquire(swapf.swapf_vnlock);
 
   offset = idx * PAGE_SIZE;
   iov.iov_ubase = (void*)PADDR_TO_KVADDR(pg->pg_paddr);
@@ -149,9 +158,9 @@ int swapfile_write_page(struct page * pg) {
   u.uio_space = NULL;
   u.uio_offset = offset;
 
-  result = VOP_WRITE(sf.sf_vn, &u);
+  result = VOP_WRITE(swapf.swapf_vn, &u);
 
-  lock_release(sf.sf_vnlock);
+  lock_release(swapf.swapf_vnlock);
 
   if (result) {
     swapfile_return(idx, pg);
@@ -162,8 +171,8 @@ int swapfile_write_page(struct page * pg) {
 
   return 0;
 }
-
-int swapfile_load_page(struct page * pg) {
+/*load a page from the swapfile into  memory */
+int swapfile_load_page(struct page* pg) {
   int idx;
   int result;
   off_t offset;
@@ -178,7 +187,7 @@ int swapfile_load_page(struct page * pg) {
 
   KASSERT(pg->pg_paddr != 0);
 
-  lock_acquire(sf.sf_vnlock);
+  lock_acquire(swapf.swapf_vnlock);
 
   offset = idx * PAGE_SIZE;
   iov.iov_ubase = (void*)PADDR_TO_KVADDR(pg->pg_paddr);
@@ -191,13 +200,13 @@ int swapfile_load_page(struct page * pg) {
   u.uio_space = NULL;
   u.uio_offset = offset;
 
-  result = VOP_READ(sf.sf_vn, &u);
+  result = VOP_READ(swapf.swapf_vn, &u);
 
   if (result) {
     return result;
   }
 
-  lock_release(sf.sf_vnlock);
+  lock_release(swapf.swapf_vnlock);
 
   swapfile_return(idx, pg);
 

@@ -38,6 +38,7 @@
 
 
 #include <machine/vm.h>
+#include "opt-A3.h"
 
 /* Fault-type arguments to vm_fault() */
 #define VM_FAULT_READ        0    /* A read was attempted */
@@ -58,11 +59,11 @@ vaddr_t alloc_kpages(int npages);
 void free_kpages(vaddr_t addr);
 
 /* TLB management */
-int tlb_get_rr_victim(void);
-void tlb_evict(vaddr_t vaddr);
-void tlb_invalidate(vaddr_t vaddr);
+int tlb_get_rr_victim(void); // round robin 
+void tlb_evict(vaddr_t vaddr); // get rid of a tlb entry 
+void tlb_invalidate(vaddr_t vaddr); // make tlb not work any more   
 
-//alise the tlb_probe function 
+//aliasing the tlb_probe function so I don't have to keep adding the zero 
 #define tlb_find(x) tlb_probe(x, 0)
 
 

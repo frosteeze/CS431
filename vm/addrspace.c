@@ -30,20 +30,21 @@
 #define SIFINLINE
 
 #include <types.h>
+
+#include <uio.h>
+#include <current.h>
+#include <spinlock.h>
+#include <mips/tlb.h>
+#include <coremap.h>
+#include <swapfile.h>
+#include <addrspace.h>
+#include <vm.h>
 #include <kern/errno.h>
 #include <lib.h>
 #include <spl.h>
-#include <spinlock.h>
-#include <mips/tlb.h>
-#include <addrspace.h>
-#include <vm.h>
-#include <pt.h>
-#include <uio.h>
-#include <current.h>
 #include <vnode.h>
 #include <uw-vmstats.h>
-#include <coremap.h>
-#include <swapfile.h>
+#include <pt.h>
 #ifdef UW
 #include <proc.h>
 #endif
@@ -52,8 +53,11 @@
 
 #if OPT_A3
 
-DEFFLAGS(seg_info, si, siflag);
+DEFFLAGS(page_seg_info, psi, psiflag);
 
+/*Create address space by allocating space for the size of as make sure
+that you actually have an address space.
+*/
 struct addrspace *as_create(void)
 {
 	struct addrspace *as = kmalloc(sizeof(struct addrspace));
@@ -61,7 +65,7 @@ struct addrspace *as_create(void)
 		return NULL;
 	}
 
-  seg_infoarray_init(&as->as_si);
+  page_seg_infoarray_init(&as->as_psi);
 
   // we should eventually initialize the page table on prepare_load or something
   as->as_pt = NULL;
@@ -73,13 +77,16 @@ struct addrspace *as_create(void)
 
 void as_destroy(struct addrspace *as)
 {
-  // get page table for the as
-  // get the three pt_internal
-  // get the internal pt size
-  // for each page entry:
-  //    zero the frame
-  //    kfree this page
-  //    invalidate tlb
+/*	
+   *get page table size for this address space.
+   *get the three pt_indirection_level 
+   *get the internal pagetable size
+   *per page entry:
+   
+      -zero the frame
+      -kfree this page
+      -invalidate tlb
+  */
   
   KASSERT(as);
 
@@ -94,14 +101,14 @@ void as_destroy(struct addrspace *as)
 
   kfree(as->as_pt);
 
-  seg_infoarray_remove(&as->as_si, 0);
-  seg_infoarray_remove(&as->as_si, 0);
-  seg_infoarray_cleanup(&as->as_si);
+  page_seg_infoarray_remove(&as->as_psi, 0);
+  page_seg_infoarray_remove(&as->as_psi, 0);
+  page_seg_infoarray_cleanup(&as->as_psi);
   
 	kfree(as);
 }
 
-static struct addrspace * as_prev = NULL;
+static struct addrspace* as_prev = NULL;
 
 void as_activate(void)
 {
@@ -121,7 +128,6 @@ void as_activate(void)
     return;
   }
 
-	/* Disable interrupts on this CPU while frobbing the TLB. */
 	spl = splhigh();
 
 	for (i=0; i<NUM_TLB; i++) {
@@ -134,6 +140,10 @@ void as_activate(void)
 	splx(spl);
 }
 
+
+/*
+	never got around to fully implementing this function 
+*/
 void as_deactivate(void)
 {
 	/* nothing */
@@ -147,43 +157,43 @@ int as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 		 int readable, int writeable, int executable, off_t file_offset, size_t filesz){
 	size_t npages; 
 
-  struct seg_info* si;
-  si = kmalloc(sizeof(struct seg_info));
-  if (si == NULL) {
+  struct page_seg_info* psi;
+  psi = kmalloc(sizeof(struct page_seg_info));
+  if (psi == NULL) {
     return ENOMEM;
   }
 
   // should we be checking this?
   KASSERT((vaddr & PAGE_FRAME) == vaddr);
 
-  si->si_seg_base = vaddr;
-  si->si_seg_size = filesz;
+  psi->psi_seg_base = vaddr;
+  psi->psi_seg_size = filesz;
 
 	npages = (sz + PAGE_SIZE - 1) / PAGE_SIZE;
 
-  si->si_base = vaddr;
-  si->si_size = npages;
+  psi->psi_base = vaddr;
+  psi->psi_size = npages;
 
-  si_set_flag(si, r, readable);
-  si_set_flag(si, w, writeable);
-  si_set_flag(si, x, executable);
+  psi_set_flag(psi, r, readable);
+  psi_set_flag(psi, w, writeable);
+  psi_set_flag(psi, x, executable);
 
-  si->si_offset = file_offset;
+  psi->psi_offset = file_offset;
 
-  seg_infoarray_add(&as->as_si, si, NULL);
+  page_seg_infoarray_add(&as->as_psi, psi, NULL);
 
   return 0;
 }
 
-static int min(int a, int b) {
-  return a < b ? a : b;
-}
+//static int min(int a, int b) {
+  //return a < b ? a : b;
+//}
 
-static int maxf(int a, int b) {
-  return a < b ? b : a;
-}
+//static int maxf(int a, int b) {
+  //return a < b ? b : a;
+//}
 
-int as_load_page(struct addrspace * as, struct page * pg) {
+int as_load_page(struct addrspace* as, struct page* pg) {
   if (pg == NULL) {
     return EINVAL;
   }
@@ -200,18 +210,18 @@ int as_load_page(struct addrspace * as, struct page * pg) {
     return result;
   }
 
-  int max = seg_infoarray_num(&as->as_si);
+  int max = page_seg_infoarray_num(&as->as_psi);
   bool in_seg = false;
 
   for (int i = 0; i < max; i++) {
-    struct seg_info * si = seg_infoarray_get(&as->as_si, i);
-    if (si_in_segment(si, vaddr)) {
+    struct page_seg_info * psi = page_seg_infoarray_get(&as->as_psi, i);
+    if (psi_in_segment(psi, vaddr)) {
       struct iovec iov;
       struct uio u;
       int res;
 
       vaddr_t startvaddr = vaddr;
-      int len = min(maxf((int)si->si_seg_size - ((int)startvaddr - (int)si->si_seg_base), 0), PAGE_SIZE);
+      int len = MIN(MAXF((int)psi->psi_seg_size - ((int)startvaddr - (int)psi->psi_seg_base), 0), PAGE_SIZE);
       
       if (len > 0) {
         iov.iov_ubase = (void*)PADDR_TO_KVADDR(paddr);
@@ -219,7 +229,7 @@ int as_load_page(struct addrspace * as, struct page * pg) {
         u.uio_iov = &iov;
         u.uio_iovcnt = 1;
         u.uio_resid = len; // amount to read
-        u.uio_offset = si->si_offset + (startvaddr - si->si_seg_base);
+        u.uio_offset = psi->psi_offset + (startvaddr - psi->psi_seg_base);
         u.uio_segflg = UIO_SYSSPACE;
         u.uio_rw = UIO_READ;
         u.uio_space = NULL;
@@ -305,14 +315,15 @@ int as_copy(struct addrspace *old, struct addrspace **ret)
 	return 0;
 }
 
+//should be 
 int as_num_stackpages(struct addrspace * as) {
   return as->as_stack_size;
 }
 
-bool si_in_segment(struct seg_info * si, vaddr_t vaddr) {
+bool psi_in_segment(struct page_seg_info * psi, vaddr_t vaddr) {
   KASSERT(vaddr % PAGE_SIZE == 0);
 
-  return (vaddr >= si->si_base && vaddr < si->si_base + PAGE_SIZE * si->si_size);
+  return (vaddr >= psi->psi_base && vaddr < psi->psi_base + PAGE_SIZE * psi->psi_size);
 }
 
 struct page * as_get_page(struct addrspace * as, vaddr_t vaddr, bool * ret) {

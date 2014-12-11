@@ -1,4 +1,4 @@
-#include "opt-A2.h"
+#include "opt-A3.h"
 
 #include <types.h>
 #include <kern/errno.h>
@@ -18,7 +18,7 @@
 
 
 
-#if OPT_A2
+#if OPT_A3
 int sys_fork(struct trapframe *tf, pid_t *retval)
 {
 	int s;
@@ -94,10 +94,8 @@ int sys_fork(struct trapframe *tf, pid_t *retval)
 
 int sys_getpid(pid_t *retval)
 {
-#if OPT_A2
     struct proc *p = curproc;
     *retval = p->p_pid;
-#endif // OPT_A2
     return(0);
 
 }

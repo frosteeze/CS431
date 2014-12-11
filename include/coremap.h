@@ -35,7 +35,7 @@ struct page;
 struct frame
 {
   // page used for mapping
-  struct page * fm_page;
+  struct page* fm_page;
 
   /*
     0 - FRAME_FREE
@@ -53,7 +53,7 @@ struct frame
 
 void coremap_init(void);
 
-paddr_t coremap_alloc_frame(struct page *new_page);
+paddr_t coremap_alloc_frame(struct page* new_page);
 
 paddr_t coremap_alloc_kframes(size_t npages);
 

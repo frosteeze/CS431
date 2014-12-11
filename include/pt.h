@@ -2,6 +2,7 @@
 #define _PT_H
 
 #include <types.h>
+#include "opt-A3.h"
 
 enum pgflag {swap=0, valid=1};
 /*this implementation of the pagetable uses a multilevel pagetable where you have 2 levels 
@@ -27,7 +28,7 @@ struct page
 
 DECLFLAGS(page, pg, pgflag);
 
-struct pt_internal {
+struct pt_indirection_level {
   struct page * pti_pages;
 
   vaddr_t pti_base;
@@ -35,7 +36,7 @@ struct pt_internal {
 };
 
 struct page_table {
-  struct pt_internal * pt_pt[3];
+  struct pt_indirection_level * pt_pt[3];
 };
 
 struct page_table* pt_create(struct addrspace* as);

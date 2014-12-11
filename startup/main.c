@@ -123,7 +123,7 @@ boot(void)
 	kprintf("\n");
 
 	/* Late phase of initialization. */
-	vm_bootstrap();
+	//vm_bootstrap(); 
 	kprintf_bootstrap();
 	thread_start_cpus();
 

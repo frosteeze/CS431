@@ -14,8 +14,11 @@
 
 DEFFLAGS(page, pg, pgflag);
 
-static struct pt_internal * pti_create(vaddr_t base, size_t sz) {
-  struct pt_internal * pti = kmalloc(sizeof(struct pt_internal));
+/*
+	creates a blank 
+*/
+static struct pt_indirection_level* pti_create(vaddr_t base, size_t sz) {
+  struct pt_indirection_level* pti = kmalloc(sizeof(struct pt_indirection_level));
   if (pti == NULL) {
     return NULL;
   }
@@ -47,12 +50,16 @@ static struct pt_internal * pti_create(vaddr_t base, size_t sz) {
   return pti;
 }
 
-static bool pti_contains(struct pt_internal * pti, vaddr_t vaddr) {
+/*
+	Check if a page is in the pagetable using the address must be given the page table 
+	you are try to find  
+*/ 
+static bool pti_contains(struct pt_indirection_level* pti, vaddr_t vaddr) {
   return (pti->pti_base <= vaddr && (pti->pti_base + pti->pti_size * PAGE_SIZE) >
       vaddr);
 }
 
-static struct page * pti_find(struct pt_internal * pti, vaddr_t vaddr) {
+static struct page* pti_find(struct pt_indirection_level* pti, vaddr_t vaddr) {
   if (pti == NULL) {
     return NULL;
   }
@@ -71,28 +78,28 @@ struct page_table* pt_create(struct addrspace * as) {
     return NULL;
   }
 
-  if (seg_infoarray_num(&as->as_si) != 2) {
+  if (page_seg_infoarray_num(&as->as_psi) != 2) {
     return NULL;
   }
 
-  struct page_table * pt;
+  struct page_table* pt;
   pt = kmalloc(sizeof(*pt));
   if (pt == NULL) {
     return NULL;
   }
 
-  struct seg_info * si;
+  struct page_seg_info* psi;
   // code - probably.
-  si = seg_infoarray_get(&as->as_si, 0);
-  pt->pt_pt[0] = pti_create(si->si_base, si->si_size);
+  psi = page_seg_infoarray_get(&as->as_psi, 0);
+  pt->pt_pt[0] = pti_create(psi->psi_base, psi->psi_size);
   if (pt->pt_pt[0] == NULL) {
     kfree(pt);
     return NULL;
   }
 
   // data - probably.
-  si = seg_infoarray_get(&as->as_si, 1);
-  pt->pt_pt[1] = pti_create(si->si_base, si->si_size);
+  psi = page_seg_infoarray_get(&as->as_si, 1);
+  pt->pt_pt[1] = pti_create(psi->psi_base, psi->psi_size);
   if (pt->pt_pt[1] == NULL) {
     kfree(pt->pt_pt[0]);
     kfree(pt);
@@ -100,7 +107,7 @@ struct page_table* pt_create(struct addrspace * as) {
   }
 
   // stack is fixed size
-  pt->pt_pt[2] = pti_create(USERSTACK - (MAX_STACK_SIZE * PAGE_SIZE),
+  pt->pt_pt[2] = pti_create(USERSTACK - (MAX_STACK_SIZE* PAGE_SIZE),
       MAX_STACK_SIZE);
   if (pt->pt_pt[2] == NULL) {
     kfree(pt->pt_pt[1]);
@@ -112,13 +119,13 @@ struct page_table* pt_create(struct addrspace * as) {
   return pt;
 }
 
-void pt_destroy(struct page_table * pt)
+void pt_destroy(struct page_table* pt)
 {
 	KASSERT(pt);
 
   for (int i = 0; i < 3; i++)
   {
-    struct pt_internal * pti = pt->pt_pt[i];
+    struct pt_indirection_level * pti = pt->pt_pt[i];
 
     KASSERT(pti);
 
@@ -146,12 +153,12 @@ void pt_destroy(struct page_table * pt)
 }
 
 
-struct page * pt_find_page(struct page_table * pt, vaddr_t vaddr) {
+struct page* pt_find_page(struct page_table* pt, vaddr_t vaddr) {
   if (pt == NULL) {
     return NULL;
   }
 
-  struct page * pg = NULL;
+  struct page* pg = NULL;
 
   if (pti_contains(pt->pt_pt[0], vaddr)) {
     pg = pti_find(pt->pt_pt[0], vaddr);
