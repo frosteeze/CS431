@@ -15,8 +15,9 @@
 #include <addrspace.h>
 #include <file.h>
 #include <copyinout.h>
+#include <fcntl.h>
 
-
+#define PATH_MAX 1024
 
 #if OPT_A2
 int sys_fork(struct trapframe *tf, pid_t *retval)

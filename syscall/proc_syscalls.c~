@@ -15,8 +15,9 @@
 #include <addrspace.h>
 #include <file.h>
 #include <copyinout.h>
+#include <vfs.h>
 
-
+#define PATH_MAX 1024
 
 #if OPT_A2
 int sys_fork(struct trapframe *tf, pid_t *retval)
@@ -175,3 +176,135 @@ struct process_list_entry* get_process_entry (pid_t pid) {
   }
   return NULL;
 }
+
+/* Execv implementation */
+int sys_execv(char *progname, char **args) { /* execv will take in the arguments of a char pointer to the program name and an array of characters for the program's arguments */
+	struct vnode *v;
+	vaddr_t entrypoint, stackprt;
+	int result;
+	int argc, spl;
+	int i = 0;
+	size_t bufferlen;
+	spl=splhigh(); // Switch to kernel mode
+	char *prog = (char*)kmalloc(PATH_MAX); // copy the name of the program to the kernel
+	if(prog == NULL) {
+		// Make sure that the program isn't empty
+		return ENOMEM;
+	}	
+	copyinstr((userptr_t)progname,prog,PATH_MAX,&bufferlen);
+	
+	//verify that all arguments are valid
+	while(args[i]!=NULL) {
+		i++;
+	}
+	argc = i;
+	char **argv;
+	argv = (char**)kmalloc(sizeof(char*));
+	if(argv == NULL) {
+		kfree(prog);
+		return ENOMEM;
+	}
+	
+	int j;
+	for(i=0; i <= argc; i++) {
+		if(i<argc) {
+			int length;
+			length = strlen(args[i]);
+			length = length + 1;
+			argv[i]=(char*)kmalloc(length+1);
+			if(argv[i]==NULL) {
+				// If we are out of memory
+				for(j=0; j < i; j++) {
+					kfree(argv[j]);
+				}
+				// deallocate previous args we allocated and used before
+				kfree(argv);
+				kfree(prog);
+				return ENOMEM;
+			}
+				// We have deallocated all previous arguments and the copy of the program name from the kernel
+			copyinstr((userptr_t)args[i], argv[i], length, &bufferlen);
+		}	
+		else {
+		argv[i] = NULL;
+		}
+	}
+	/* We will now open the file */
+	result = vfs_open(prog, O_RDONLY, 0, &v);
+	if(result) {
+		return result;
+	}	
+
+	if(curproc->p_addrspace) {
+		struct addrspace *as = curproc->p_addrspace;	
+		curproc->p_addrspace = NULL;
+		as_destroy(as);
+	}
+	/* It should create a new process and be NULL */
+	//kassert(curproc->p_addrspace == NULL);
+	
+	/* Create an address space for the process */
+	curproc->p_addrspace = as_create();
+	if(curproc->p_addrspace == NULL) {
+		vfs_close(v);
+		return ENOMEM;
+	}
+
+	// Allocate space for the current process into VM
+	//as_activate(curproc->p_addrspace);
+	
+	/* We will now load the executable file by invoking load_elf */
+	result = load_elf(v, &entrypoint);
+	if(result) {
+		// If result returns true, destroy the current process
+		vfs_close(v);
+		return result;
+	}
+	
+	vfs_close(v);
+
+	/* Define the user stack in the address space */
+	result = as_define_stack(curproc->p_addrspace, &stackprt);
+	
+	if(result) {
+		return result;
+	}
+
+
+	/* We are now going to push the arugments onto the stack and align the arguments to be byte addressable similar to how we did it for runprog */
+	int argvptr[argc];
+	int totaloffset = 0;
+	for(i = argc-1; i >= 0; i--) {
+		int length = strlen(argv[i])+1;
+		if(length%4 != 0) {
+			int remainder = (length%4);
+			totaloffset = (length + (4-remainder));
+			stackprt = stackprt - totaloffset;
+		}
+		else {
+			stackprt = stackprt - length;
+		}
+		copyoutstr(argv[i],(userptr_t)stackprt, length, &bufferlen);
+		argvptr[i] = stackprt;
+	}
+	
+	argvptr[argc] = 0;
+	
+	for(i = argc; i >= 0; i--) {
+		stackprt = stackprt-4;
+		copyout(&argvptr[i], (userptr_t)stackprt, sizeof(argvptr[i]));
+	}
+
+	kfree(argv);
+	kfree(prog);
+
+	/* Switch to user mode */
+	splx(spl);
+
+	enter_new_process(argc, (userptr_t)stackprt, stackprt, entrypoint);
+	
+	/* Usermod does not return, panic something went wrong */
+	panic("md_usermode returned\n");
+	return EINVAL;
+}
+
